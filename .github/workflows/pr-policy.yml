@@ -1,0 +1,65 @@
+name: pr-policy
+
+on:
+  pull_request_target:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pr-policy:
+    name: pr-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const branchPattern = /^(build|chore|ci|docs|feat|fix|hotfix|perf|refactor|revert|style|task|test)\/[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+            const conventionalPattern = /^((build|chore|ci|docs|feat|fix|hotfix|perf|refactor|revert|style|task|test)(\([A-Za-z0-9._/-]+\))?!?: .+|Merge.*into.*)$/;
+
+            const pullRequest = context.payload.pull_request;
+            if (!pullRequest) {
+              core.setFailed("pr-policy only supports pull_request events.");
+              return;
+            }
+
+            const headBranch = pullRequest.head.ref;
+            const prTitle = pullRequest.title.trim();
+            const problems = [];
+
+            if (!conventionalPattern.test(prTitle)) {
+              problems.push(
+                `PR title \`${prTitle}\` must follow Conventional Commits, for example ` +
+                "`feat(scope): add thing`."
+              );
+            }
+
+            if (!branchPattern.test(headBranch)) {
+              problems.push(
+                `PRs into \`main\` must come from a \`type/slug\` branch, got ` +
+                `\`${headBranch}\`.`
+              );
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullRequest.number,
+              per_page: 100,
+            });
+
+            for (const commit of commits) {
+              const subject = commit.commit.message.split("\n")[0].trim();
+              if (!conventionalPattern.test(subject)) {
+                problems.push(
+                  `Commit ${commit.sha.slice(0, 7)} subject \`${subject}\` must follow Conventional Commits.`
+                );
+              }
+            }
+
+            if (problems.length > 0) {
+              core.setFailed(problems.join("\n"));
+            }
