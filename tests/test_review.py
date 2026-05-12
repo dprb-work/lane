@@ -38,7 +38,7 @@ def test_run_review_invokes_available_agent(
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append((argv, cwd))
-        return _result("approve")
+        return _result("Verdict: approve\nComments: none")
 
     result = run_review(tmp_path, runner=runner, agents_dir=agents)
 
@@ -49,7 +49,7 @@ def test_run_review_invokes_available_agent(
     assert calls[0][1] == tmp_path
 
 
-def test_run_review_rejects_on_request_changes(
+def test_run_review_rejects_on_explicit_reject_verdict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -60,11 +60,49 @@ def test_run_review_rejects_on_request_changes(
 
     result = run_review(
         tmp_path,
-        runner=lambda argv, cwd: _result("request changes"),
+        runner=lambda argv, cwd: _result("Verdict: reject\nReason: request changes"),
         agents_dir=agents,
     )
 
     assert result.review == "reject"
+
+
+def test_run_review_does_not_parse_verdict_from_prose(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    (agents / "lane-quality-reviewer.md").write_text("review", encoding="utf-8")
+    monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/opencode")
+
+    result = run_review(
+        tmp_path,
+        runner=lambda argv, cwd: _result(
+            "Verdict: approve\nComments: none; no reject-worthy issues"
+        ),
+        agents_dir=agents,
+    )
+
+    assert result.review == "approve"
+
+
+def test_run_review_treats_missing_verdict_as_comment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    (agents / "lane-quality-reviewer.md").write_text("review", encoding="utf-8")
+    monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/opencode")
+
+    result = run_review(
+        tmp_path,
+        runner=lambda argv, cwd: _result("approve"),
+        agents_dir=agents,
+    )
+
+    assert result.review == "comment"
 
 
 def test_run_review_missing_opencode_raises_clear_error(

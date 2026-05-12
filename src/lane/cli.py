@@ -147,13 +147,13 @@ def handle_start(args: argparse.Namespace) -> int:
         review="none",
         pr=None,
     )
-    write_state(worktree.path, state)
     create_spec(
         branch.slug,
         schema=branch.spec_schema,
         description=f"Lane for {branch.branch}",
         cwd=worktree.path,
     )
+    write_state(worktree.path, state)
     _print_state(state)
     return 0
 

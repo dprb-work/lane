@@ -4,6 +4,7 @@ from pathlib import Path
 
 from lane import cli
 from lane.forge import ForgeResult
+from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
 from lane.state import LaneState, read_state, write_state
 from lane.verify import VerifyCommand, VerifyResult
@@ -47,6 +48,32 @@ def test_start_uses_paseo_create_and_writes_state(
     assert spec_calls == [
         ("login", "lane-lite", "Lane for fix/login", workspace),
     ]
+
+
+def test_start_does_not_write_state_when_spec_creation_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    def fake_create_worktree(branch: str, *, base: str, cwd: Path) -> PaseoWorktree:
+        return PaseoWorktree(name="login", branch=branch, path=workspace)
+
+    def fake_create_spec(
+        name: str,
+        *,
+        schema: str,
+        description: str,
+        cwd: Path,
+    ) -> None:
+        raise OpenSpecError("spec failed")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+
+    assert cli.main(["start", "fix/login"]) == 2
+    assert not (workspace / ".lane" / "state.yaml").exists()
 
 
 def test_cleanup_archives_resolved_lane_branch(

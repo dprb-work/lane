@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -84,7 +85,8 @@ def _run_agent(agent: str, workspace: Path, runner: Runner) -> ReviewRun:
         [
             "opencode",
             "run",
-            "Review this lane and return a verdict: approve, comment, or reject.",
+            "Review this lane. Include exactly one verdict line: "
+            "Verdict: approve, comment, or reject.",
             "--agent",
             agent,
             "--dir",
@@ -101,14 +103,29 @@ def _run_agent(agent: str, workspace: Path, runner: Runner) -> ReviewRun:
 def _aggregate_review(runs: tuple[ReviewRun, ...]) -> ReviewStatus:
     if not runs:
         return "none"
-    lowered = "\n".join(run.output.lower() for run in runs)
     if any(run.exit_status != 0 for run in runs):
         return "reject"
-    if "request changes" in lowered or "reject" in lowered:
+
+    verdicts = [_explicit_verdict(run.output) for run in runs]
+    if any(verdict == "reject" for verdict in verdicts):
         return "reject"
-    if "comment" in lowered:
+    if any(verdict == "comment" for verdict in verdicts):
+        return "comment"
+    if any(verdict is None for verdict in verdicts):
         return "comment"
     return "approve"
+
+
+def _explicit_verdict(output: str) -> ReviewStatus | None:
+    for line in output.splitlines():
+        match = re.fullmatch(
+            r"\s*verdict\s*:\s*(approve|comment|reject)\s*",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if match is not None:
+            return match.group(1).lower()  # type: ignore[return-value]
+    return None
 
 
 def _run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
