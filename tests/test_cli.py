@@ -68,9 +68,47 @@ def test_start_does_not_write_state_when_spec_creation_fails(
     ) -> None:
         raise OpenSpecError("spec failed")
 
+    archived: list[str] = []
+
+    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+        archived.append(name)
+        return PaseoArchiveResult(name="login", removed_agents=())
+
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+
+    assert cli.main(["start", "fix/login"]) == 2
+    assert not (workspace / ".lane" / "state.yaml").exists()
+    assert archived == ["fix/login"]
+
+
+def test_start_reports_rollback_failure_when_spec_creation_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    def fake_create_worktree(branch: str, *, base: str, cwd: Path) -> PaseoWorktree:
+        return PaseoWorktree(name="login", branch=branch, path=workspace)
+
+    def fake_create_spec(
+        name: str,
+        *,
+        schema: str,
+        description: str,
+        cwd: Path,
+    ) -> None:
+        raise OpenSpecError("spec failed")
+
+    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+        raise cli.PaseoError("archive failed")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
 
     assert cli.main(["start", "fix/login"]) == 2
     assert not (workspace / ".lane" / "state.yaml").exists()

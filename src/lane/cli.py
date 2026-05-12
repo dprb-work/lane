@@ -147,12 +147,22 @@ def handle_start(args: argparse.Namespace) -> int:
         review="none",
         pr=None,
     )
-    create_spec(
-        branch.slug,
-        schema=branch.spec_schema,
-        description=f"Lane for {branch.branch}",
-        cwd=worktree.path,
-    )
+    try:
+        create_spec(
+            branch.slug,
+            schema=branch.spec_schema,
+            description=f"Lane for {branch.branch}",
+            cwd=worktree.path,
+        )
+    except OpenSpecError as error:
+        try:
+            archive_worktree(worktree.branch)
+        except PaseoError as archive_error:
+            raise OpenSpecError(
+                "spec creation failed and rollback archive failed: "
+                f"{error}; {archive_error}"
+            ) from error
+        raise
     write_state(worktree.path, state)
     _print_state(state)
     return 0
