@@ -40,7 +40,7 @@ def ensure_pr_merged(
     runner: Runner | None = None,
 ) -> None:
     if pr_url is None:
-        return
+        raise CleanupError("cleanup requires a PR URL to verify merge status")
     _require_tool("gh")
     runner = _run if runner is None else runner
     result = _run_required(

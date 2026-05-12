@@ -107,9 +107,8 @@ lane status https://github.com/org/repo/pull/123
 lane status https://gitlab.com/org/repo/-/merge_requests/123
 ```
 
-Ambiguous known-lane matches fail with candidate branches. Current CLI commands
-can resolve current-directory and filesystem-path selectors directly; branch,
-slug, and PR selector helpers are available for the list-backed resolver path.
+Ambiguous known-lane matches fail with candidate branches. Non-path selectors are
+resolved against lane state found in Paseo-listed worktrees.
 
 ## Branch Schemas
 

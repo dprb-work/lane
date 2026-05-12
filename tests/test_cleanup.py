@@ -44,6 +44,11 @@ def test_ensure_pr_merged_rejects_open_pr(
         )
 
 
+def test_ensure_pr_merged_rejects_missing_pr(tmp_path: Path) -> None:
+    with pytest.raises(CleanupError, match="requires a PR URL"):
+        ensure_pr_merged(None, tmp_path)
+
+
 def test_ensure_pr_merged_accepts_merged_pr(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

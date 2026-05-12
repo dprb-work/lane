@@ -17,10 +17,16 @@ from lane.cleanup import (
 from lane.forge import ForgeError, finalize_pr
 from lane.init import run_init
 from lane.openspec import OpenSpecError, create_spec, require_spec_archived
-from lane.paseo import PaseoError, archive_worktree, create_worktree
-from lane.resolve import resolve_current_directory, resolve_filesystem_path
+from lane.paseo import PaseoError, archive_worktree, create_worktree, list_worktrees
+from lane.resolve import (
+    resolve_current_directory,
+    resolve_exact_branch,
+    resolve_filesystem_path,
+    resolve_pr_selector,
+    resolve_slug,
+)
 from lane.review import ReviewError, run_review
-from lane.state import STATE_SCHEMA, LaneState, state_to_dict, write_state
+from lane.state import STATE_SCHEMA, LaneState, read_state, state_to_dict, write_state
 from lane.verify import VerifyError, run_verify
 
 
@@ -258,11 +264,31 @@ def _print_state(state: LaneState) -> None:
 
 
 def _resolve_lane(selector: str | None) -> LaneState:
-    return (
-        resolve_current_directory(Path.cwd())
-        if selector is None
-        else resolve_filesystem_path(selector)
-    )
+    if selector is None:
+        return resolve_current_directory(Path.cwd())
+
+    candidate = Path(selector).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    if candidate.exists():
+        return resolve_filesystem_path(selector)
+
+    lanes = _known_lane_states()
+    if selector.startswith("#") or selector.startswith(("http://", "https://")):
+        return resolve_pr_selector(selector, lanes)
+    if "/" in selector:
+        return resolve_exact_branch(selector, lanes)
+    return resolve_slug(selector, lanes)
+
+
+def _known_lane_states() -> list[LaneState]:
+    lanes: list[LaneState] = []
+    for worktree in list_worktrees():
+        try:
+            lanes.append(read_state(worktree.path))
+        except FileNotFoundError:
+            continue
+    return lanes
 
 
 if __name__ == "__main__":

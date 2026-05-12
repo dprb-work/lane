@@ -53,7 +53,11 @@ def test_cleanup_archives_resolved_lane_branch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+    )
     write_state(tmp_path, state)
     calls: list[str] = []
 
@@ -67,6 +71,25 @@ def test_cleanup_archives_resolved_lane_branch(
 
     assert cli.main(["cleanup"]) == 0
     assert calls == ["fix/login"]
+
+
+def test_cleanup_refuses_lane_without_pr(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+    calls: list[str] = []
+
+    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+        calls.append(name)
+        return PaseoArchiveResult(name="login", removed_agents=())
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+
+    assert cli.main(["cleanup"]) == 2
+    assert calls == []
 
 
 def test_cleanup_refuses_active_spec(
@@ -112,6 +135,58 @@ def test_abort_archives_explicit_path_lane_branch(
 
     assert cli.main(["abort", str(workspace)]) == 0
     assert calls == ["chore/drop-experiment"]
+
+
+def test_status_resolves_exact_branch_from_known_lanes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(workspace, branch="fix/login")
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+
+    assert cli.main(["status", "fix/login"]) == 0
+
+
+def test_status_resolves_slug_from_known_lanes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(workspace, branch="fix/login")
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+
+    assert cli.main(["status", "login"]) == 0
+
+
+def test_status_resolves_pr_selector_from_known_lanes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(
+        workspace,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+    )
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+
+    assert cli.main(["status", "#123"]) == 0
 
 
 def test_finalize_refuses_active_spec(
@@ -160,7 +235,7 @@ def test_finalize_updates_state_with_pr_url(
     assert updated.pr == "https://github.com/acme/app/pull/123"
 
 
-def _state(path: Path, *, branch: str) -> LaneState:
+def _state(path: Path, *, branch: str, pr: str | None = None) -> LaneState:
     return LaneState(
         schema=1,
         id=branch.split("/", maxsplit=1)[1],
@@ -170,5 +245,5 @@ def _state(path: Path, *, branch: str) -> LaneState:
         path=path,
         spec=branch.split("/", maxsplit=1)[1],
         review="none",
-        pr=None,
+        pr=pr,
     )
