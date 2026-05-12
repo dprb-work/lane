@@ -210,6 +210,10 @@ Initial command resolution should be intentionally narrow:
 Do not bake in `uv`. If a repo uses `uv`, that should appear inside its verify
 command, e.g. `just verify` or `npm run verify`.
 
+Initial verification reports the command, exit status, and a concise output
+summary without mutating lane state. Freshness tracking can be added later if a
+finalize policy needs durable verification timestamps.
+
 ### `lane review [selector]`
 
 Invoke configured OpenCode review perspectives by convention. The perspective
