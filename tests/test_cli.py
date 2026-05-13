@@ -316,6 +316,68 @@ def test_status_resolves_pr_selector_from_known_lanes(
     assert cli.main(["status", "#123"]) == 0
 
 
+def test_list_prints_known_lanes(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    write_state(first, _state(first, branch="fix/login"))
+    write_state(
+        second,
+        _state(
+            second,
+            branch="feat/dashboard",
+            pr="https://github.com/acme/app/pull/123",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda: [
+            PaseoWorktree(name="dashboard", branch="feat/dashboard", path=second),
+            PaseoWorktree(name="login", branch="fix/login", path=first),
+        ],
+    )
+
+    assert cli.main(["list"]) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+
+    assert lines == [
+        (
+            "ID         STATUS  BRANCH          REVIEW  PR"
+            "                                    PATH"
+        ),
+        (
+            "dashboard  active  feat/dashboard  none    "
+            f"https://github.com/acme/app/pull/123  {second}"
+        ),
+        (
+            "login      active  fix/login       none    -"
+            f"                                     {first}"
+        ),
+    ]
+
+
+def test_list_skips_worktrees_without_lane_state(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda: [PaseoWorktree(name="external", branch="fix/external", path=workspace)],
+    )
+
+    assert cli.main(["list"]) == 0
+
+    assert capsys.readouterr().out == "ID  STATUS  BRANCH  REVIEW  PR  PATH\n"
+
+
 def test_finalize_refuses_active_spec(
     tmp_path: Path,
     monkeypatch,
@@ -363,14 +425,15 @@ def test_finalize_updates_state_with_pr_url(
 
 
 def _state(path: Path, *, branch: str, pr: str | None = None) -> LaneState:
+    lane_id = branch.split("/", maxsplit=1)[1]
     return LaneState(
         schema=1,
-        id=branch.split("/", maxsplit=1)[1],
+        id=lane_id,
         status="active",
         branch=branch,
         base="main",
         path=path,
-        spec=branch.split("/", maxsplit=1)[1],
+        spec=lane_id,
         review="none",
         pr=pr,
     )

@@ -205,6 +205,18 @@ Show compact status:
 - PR URL
 - dirty state summary
 
+### `lane list`
+
+List known lanes discovered from Paseo-listed worktrees. Worktrees without
+`.lane/state.yaml` are ignored. Output is a compact aligned table with:
+
+- id
+- status
+- branch
+- review
+- PR URL or `-`
+- path
+
 ### `lane verify [selector]`
 
 Run the repo's verification command in the Paseo workspace.
