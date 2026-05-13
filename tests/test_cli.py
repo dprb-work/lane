@@ -15,11 +15,22 @@ def test_start_uses_paseo_create_and_writes_state(
     monkeypatch,
 ) -> None:
     workspace = tmp_path / "workspace"
-    calls: list[tuple[str, str, Path]] = []
+    calls: list[tuple[str, str | None, str, Path]] = []
 
-    def fake_create_worktree(branch: str, *, base: str, cwd: Path) -> PaseoWorktree:
-        calls.append((branch, base, cwd))
-        return PaseoWorktree(name="login", branch=branch, path=workspace)
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
+        calls.append((branch, worktree_slug, base, cwd))
+        return PaseoWorktree(name="login", branch="login", path=workspace)
+
+    renamed: list[tuple[str, Path]] = []
+
+    def fake_rename_current_branch(branch: str, *, cwd: Path) -> None:
+        renamed.append((branch, cwd))
 
     spec_calls: list[tuple[str, str, str, Path]] = []
 
@@ -34,11 +45,13 @@ def test_start_uses_paseo_create_and_writes_state(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(cli, "rename_current_branch", fake_rename_current_branch)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
 
     assert cli.main(["start", "fix/login", "--base", "main"]) == 0
 
-    assert calls == [("fix/login", "main", tmp_path)]
+    assert calls == [("fix/login", "login", "main", tmp_path)]
+    assert renamed == [("fix/login", workspace)]
     state = read_state(workspace)
     assert state.id == "login"
     assert state.branch == "fix/login"
@@ -56,7 +69,13 @@ def test_start_does_not_write_state_when_spec_creation_fails(
 ) -> None:
     workspace = tmp_path / "workspace"
 
-    def fake_create_worktree(branch: str, *, base: str, cwd: Path) -> PaseoWorktree:
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
         return PaseoWorktree(name="login", branch=branch, path=workspace)
 
     def fake_create_spec(
@@ -84,13 +103,56 @@ def test_start_does_not_write_state_when_spec_creation_fails(
     assert archived == ["fix/login"]
 
 
+def test_start_rolls_back_when_branch_rename_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
+        return PaseoWorktree(name="login", branch="login", path=workspace)
+
+    archived: list[str] = []
+
+    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+        archived.append(name)
+        return PaseoArchiveResult(name="login", removed_agents=())
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(
+        cli,
+        "rename_current_branch",
+        lambda branch, *, cwd: (_ for _ in ()).throw(
+            cli.PaseoError("rename failed")
+        ),
+    )
+    monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+
+    assert cli.main(["start", "fix/login"]) == 2
+    assert not (workspace / ".lane" / "state.yaml").exists()
+    assert archived == ["login"]
+
+
 def test_start_reports_rollback_failure_when_spec_creation_fails(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     workspace = tmp_path / "workspace"
 
-    def fake_create_worktree(branch: str, *, base: str, cwd: Path) -> PaseoWorktree:
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
         return PaseoWorktree(name="login", branch=branch, path=workspace)
 
     def fake_create_spec(

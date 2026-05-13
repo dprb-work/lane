@@ -17,7 +17,13 @@ from lane.cleanup import (
 from lane.forge import ForgeError, finalize_pr
 from lane.init import run_init
 from lane.openspec import OpenSpecError, create_spec, require_spec_archived
-from lane.paseo import PaseoError, archive_worktree, create_worktree, list_worktrees
+from lane.paseo import (
+    PaseoError,
+    archive_worktree,
+    create_worktree,
+    list_worktrees,
+    rename_current_branch,
+)
 from lane.resolve import (
     resolve_current_directory,
     resolve_exact_branch,
@@ -135,7 +141,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 def handle_start(args: argparse.Namespace) -> int:
     branch = parse_branch(args.branch)
-    worktree = create_worktree(branch.branch, base=args.base, cwd=Path.cwd())
+    worktree = create_worktree(
+        branch.branch,
+        base=args.base,
+        cwd=Path.cwd(),
+        worktree_slug=branch.slug,
+    )
+    if worktree.branch != branch.branch:
+        try:
+            rename_current_branch(branch.branch, cwd=worktree.path)
+        except PaseoError as error:
+            try:
+                archive_worktree(worktree.branch)
+            except PaseoError as archive_error:
+                raise PaseoError(
+                    "branch rename failed and rollback archive failed: "
+                    f"{error}; {archive_error}"
+                ) from error
+            raise
+        worktree = replace(worktree, branch=branch.branch)
     state = LaneState(
         schema=STATE_SCHEMA,
         id=branch.slug,

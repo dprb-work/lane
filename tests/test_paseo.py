@@ -12,6 +12,7 @@ from lane.paseo import (
     archive_worktree,
     create_worktree,
     list_worktrees,
+    rename_current_branch,
 )
 
 
@@ -31,6 +32,7 @@ def test_create_worktree_calls_paseo_branch_off(
         "fix/login",
         base="main",
         cwd=Path("/repo"),
+        worktree_slug="login",
         runner=runner,
     )
 
@@ -48,7 +50,7 @@ def test_create_worktree_calls_paseo_branch_off(
                 "--mode",
                 "branch-off",
                 "--new-branch",
-                "fix/login",
+                "login",
                 "--base",
                 "main",
                 "--cwd",
@@ -57,6 +59,23 @@ def test_create_worktree_calls_paseo_branch_off(
             ],
             Path("/repo"),
         )
+    ]
+
+
+def test_rename_current_branch_renames_git_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.paseo.shutil.which", lambda _: "/usr/bin/git")
+    calls: list[tuple[list[str], Path | None]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, cwd))
+        return _result("")
+
+    rename_current_branch("fix/login", cwd=Path("/tmp/login"), runner=runner)
+
+    assert calls == [
+        (["git", "branch", "-m", "fix/login"], Path("/tmp/login")),
     ]
 
 

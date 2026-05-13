@@ -39,6 +39,7 @@ def create_worktree(
     *,
     base: str,
     cwd: Path,
+    worktree_slug: str | None = None,
     runner: Runner | None = None,
 ) -> PaseoWorktree:
     raw = _run_json(
@@ -49,7 +50,7 @@ def create_worktree(
             "--mode",
             "branch-off",
             "--new-branch",
-            branch,
+            worktree_slug or branch,
             "--base",
             base,
             "--cwd",
@@ -60,6 +61,19 @@ def create_worktree(
         runner=_run if runner is None else runner,
     )
     return _worktree_from_create(raw)
+
+
+def rename_current_branch(
+    branch: str,
+    *,
+    cwd: Path,
+    runner: Runner | None = None,
+) -> None:
+    runner = _run if runner is None else runner
+    result = _run_command(["git", "branch", "-m", branch], cwd=cwd, runner=runner)
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "command failed"
+        raise PaseoError(f"git branch rename failed: {message}")
 
 
 def list_worktrees(*, runner: Runner | None = None) -> list[PaseoWorktree]:
@@ -90,10 +104,7 @@ def archive_worktree(
 
 
 def _run_json(argv: list[str], *, cwd: Path | None, runner: Runner) -> Any:
-    if shutil.which(argv[0]) is None:
-        raise PaseoError("paseo CLI not found on PATH")
-
-    result = runner(argv, cwd)
+    result = _run_command(argv, cwd=cwd, runner=runner)
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "command failed"
         raise PaseoError(f"{' '.join(argv[:3])} failed: {message}")
@@ -102,6 +113,17 @@ def _run_json(argv: list[str], *, cwd: Path | None, runner: Runner) -> Any:
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise PaseoError("paseo returned invalid JSON") from error
+
+
+def _run_command(
+    argv: list[str],
+    *,
+    cwd: Path | None,
+    runner: Runner,
+) -> subprocess.CompletedProcess[str]:
+    if shutil.which(argv[0]) is None:
+        raise PaseoError(f"{argv[0]} CLI not found on PATH")
+    return runner(argv, cwd)
 
 
 def _run(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
