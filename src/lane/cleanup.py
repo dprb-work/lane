@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Protocol
 
+from lane.github_remote import GitHubRemoteError, infer_github_remote
+
 
 class CleanupError(RuntimeError):
     pass
@@ -73,7 +75,11 @@ def delete_remote_branch(
 ) -> None:
     _require_tool("git")
     runner = _run if runner is None else runner
-    _run_required(["git", "push", "origin", "--delete", branch], workspace, runner)
+    try:
+        remote = infer_github_remote(workspace, runner=runner)
+    except GitHubRemoteError as error:
+        raise CleanupError(str(error)) from error
+    _run_required(["git", "push", remote.name, "--delete", branch], workspace, runner)
 
 
 def _run_required(

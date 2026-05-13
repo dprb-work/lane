@@ -12,23 +12,23 @@ from lane.verify import VerifyCommand, VerifyResult
 
 def test_infer_github_repo_from_https_remote() -> None:
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        return _result("https://github.com/acme/app.git\n")
+        return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
 
     assert infer_github_repo(Path("/repo"), runner=runner) == "acme/app"
 
 
 def test_infer_github_repo_from_ssh_remote() -> None:
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        return _result("git@github.com:acme/app.git\n")
+        return _result("upstream\tgit@github.com:acme/app.git (fetch)\n")
 
     assert infer_github_repo(Path("/repo"), runner=runner) == "acme/app"
 
 
 def test_infer_github_repo_rejects_non_github_remote() -> None:
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        return _result("https://gitlab.com/acme/app.git\n")
+        return _result("origin\thttps://gitlab.com/acme/app.git (fetch)\n")
 
-    with pytest.raises(ForgeError, match="not a GitHub remote"):
+    with pytest.raises(ForgeError, match="no GitHub remote"):
         infer_github_repo(Path("/repo"), runner=runner)
 
 
@@ -38,8 +38,8 @@ def test_finalize_pr_pushes_and_creates_pr(monkeypatch: pytest.MonkeyPatch) -> N
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
-        if argv[:4] == ["git", "remote", "get-url", "origin"]:
-            return _result("https://github.com/acme/app.git\n")
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
         if argv[:4] == ["gh", "pr", "view", "fix/login"]:
             return _result("", returncode=1)
         if argv[:3] == ["gh", "pr", "create"]:
@@ -49,7 +49,7 @@ def test_finalize_pr_pushes_and_creates_pr(monkeypatch: pytest.MonkeyPatch) -> N
     result = finalize_pr(_state(), _verification(), runner=runner)
 
     assert result.pr_url == "https://github.com/acme/app/pull/123"
-    assert ["git", "push", "-u", "origin", "fix/login"] in calls
+    assert ["git", "push", "-u", "upstream", "fix/login"] in calls
     assert any(call[:3] == ["gh", "pr", "create"] for call in calls)
 
 
@@ -59,8 +59,8 @@ def test_finalize_pr_updates_existing_pr(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
-        if argv[:4] == ["git", "remote", "get-url", "origin"]:
-            return _result("https://github.com/acme/app.git\n")
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
         if argv[:4] == ["gh", "pr", "view", "fix/login"]:
             return _result("https://github.com/acme/app/pull/123\n")
         return _result("")

@@ -68,6 +68,8 @@ def test_close_pr_calls_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
         return _result("")
 
     close_pr("https://github.com/acme/app/pull/123", tmp_path, runner=runner)
@@ -84,11 +86,16 @@ def test_delete_remote_branch_calls_git(
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
         return _result("")
 
     delete_remote_branch("fix/login", tmp_path, runner=runner)
 
-    assert calls == [["git", "push", "origin", "--delete", "fix/login"]]
+    assert calls == [
+        ["git", "remote", "-v"],
+        ["git", "push", "upstream", "--delete", "fix/login"],
+    ]
 
 
 def _result(

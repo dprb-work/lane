@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlparse
 
+from lane.github_remote import GitHubRemoteError, infer_github_remote
 from lane.state import LaneState
 from lane.verify import VerifyResult
 
@@ -33,11 +32,10 @@ class Runner(Protocol):
 
 def infer_github_repo(cwd: Path, *, runner: Runner | None = None) -> str:
     runner = _run if runner is None else runner
-    result = runner(["git", "remote", "get-url", "origin"], cwd)
-    if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip() or "origin not found"
-        raise ForgeError(f"failed to infer GitHub repo: {message}")
-    return _parse_github_remote(result.stdout.strip())
+    try:
+        return infer_github_remote(cwd, runner=runner).repo
+    except GitHubRemoteError as error:
+        raise ForgeError(str(error)) from error
 
 
 def finalize_pr(
@@ -49,8 +47,12 @@ def finalize_pr(
     _require_tool("git")
     _require_tool("gh")
     runner = _run if runner is None else runner
-    repo = infer_github_repo(state.path, runner=runner)
-    _run_required(["git", "push", "-u", "origin", state.branch], state.path, runner)
+    try:
+        remote = infer_github_remote(state.path, runner=runner)
+    except GitHubRemoteError as error:
+        raise ForgeError(str(error)) from error
+    repo = remote.repo
+    _run_required(["git", "push", "-u", remote.name, state.branch], state.path, runner)
 
     title = _pr_title(state.branch, state.id)
     body = pr_body(state, verification)
@@ -106,25 +108,6 @@ def pr_body(state: LaneState, verification: VerifyResult) -> str:
             f"- `{state.path}`",
         ]
     )
-
-
-def _parse_github_remote(remote: str) -> str:
-    ssh_match = re.fullmatch(
-        r"git@github\.com:(?P<repo>[^/]+/[^/]+?)(?:\.git)?",
-        remote,
-    )
-    if ssh_match is not None:
-        return ssh_match.group("repo")
-
-    parsed = urlparse(remote)
-    if parsed.hostname != "github.com":
-        raise ForgeError(f"origin is not a GitHub remote: {remote}")
-    repo = parsed.path.strip("/")
-    if repo.endswith(".git"):
-        repo = repo[:-4]
-    if repo.count("/") != 1:
-        raise ForgeError(f"cannot parse GitHub repo from origin: {remote}")
-    return repo
 
 
 def _existing_pr_url(branch: str, cwd: Path, runner: Runner) -> str | None:
