@@ -72,7 +72,7 @@ def run_review(
     )
     runs = (*reviewer_runs, judge_run)
     return ReviewResult(
-        review=_aggregate_review(runs),
+        review=_final_review(reviewer_runs, judge_run),
         runs=runs,
         missing_agents=(),
     )
@@ -262,6 +262,15 @@ def _paseo_executable(workspace: Path) -> str | None:
     if shutil.which("paseo") is not None:
         return "paseo"
     return None
+
+
+def _final_review(
+    reviewers: tuple[ReviewRun, ...],
+    judge: ReviewRun,
+) -> ReviewStatus:
+    if any(run.exit_status != 0 for run in (*reviewers, judge)):
+        return "reject"
+    return _aggregate_review((judge,))
 
 
 def _aggregate_review(runs: tuple[ReviewRun, ...]) -> ReviewStatus:
