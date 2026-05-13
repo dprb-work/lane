@@ -15,7 +15,7 @@ from lane.cleanup import (
     ensure_pr_merged,
 )
 from lane.forge import ForgeError, finalize_pr
-from lane.init import run_init
+from lane.init import InitError, run_init
 from lane.openspec import OpenSpecError, create_spec, require_spec_archived
 from lane.paseo import (
     PaseoError,
@@ -130,6 +130,16 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="Lane selector; omitted means current directory.",
     )
+    review.add_argument(
+        "--review-agent",
+        action="append",
+        dest="review_agents",
+        help="Paseo provider mode/review agent name to run; repeat for multiple.",
+    )
+    review.add_argument(
+        "--review-judge",
+        help="Paseo provider mode/review agent name for the final judge phase.",
+    )
     review.set_defaults(handler=handle_review)
 
     for name in pending_commands:
@@ -196,6 +206,12 @@ def handle_init(args: argparse.Namespace) -> int:
     result = run_init(Path(args.path))
     print(f"ignored state: {result.gitignore}")
     print(f"lane-lite schema: {result.schema_dir}")
+    if result.paseo_version is not None:
+        print(f"paseo CLI: {result.paseo_version}")
+    if result.paseo_current_version is not None:
+        print(f"paseo current: {result.paseo_current_version}")
+    if result.paseo_upgrade_hint is not None:
+        print(f"warning: {result.paseo_upgrade_hint}", file=sys.stderr)
     if result.missing_tools:
         tools = ", ".join(result.missing_tools)
         print(f"warning: missing required tools on PATH: {tools}", file=sys.stderr)
@@ -259,13 +275,22 @@ def handle_verify(args: argparse.Namespace) -> int:
 
 def handle_review(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
-    result = run_review(state.path)
+    agents = tuple(args.review_agents) if args.review_agents else None
+    kwargs = {}
+    if args.review_judge:
+        kwargs["judge"] = args.review_judge
+    result = (
+        run_review(state.path, expected=agents, **kwargs)
+        if agents is not None
+        else run_review(state.path, **kwargs)
+    )
     write_state(state.path, replace(state, review=result.review))
     print(f"review: {result.review}")
     if result.missing_agents:
         print(f"missing agents: {', '.join(result.missing_agents)}")
     for run in result.runs:
-        print(f"{run.agent}: {run.exit_status}")
+        suffix = "" if run.paseo_agent_id is None else f" ({run.paseo_agent_id})"
+        print(f"{run.agent}: {run.exit_status}{suffix}")
     return 0 if result.review in {"approve", "comment", "none"} else 1
 
 
@@ -282,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         CleanupError,
         ForgeError,
+        InitError,
         OpenSpecError,
         PaseoError,
         ReviewError,

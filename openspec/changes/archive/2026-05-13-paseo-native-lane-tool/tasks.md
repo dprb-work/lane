@@ -7,6 +7,7 @@
 - [x] 1.3 Add minimal test runner and formatting/linting choices.
 - [x] 1.4 Add `.lane/` to project `.gitignore`.
 - [x] 1.5 Document non-goals: no non-Paseo support, no raw worktree ownership.
+- [x] 1.6 Add `scripts/install.sh` for required dependency installation.
 
 ## 2. State Model
 
@@ -52,10 +53,12 @@
 
 ## 7. Review Orchestration
 
-- [x] 7.1 Define expected OpenCode agent names by convention.
-- [x] 7.2 Implement `lane review` to invoke available review perspectives or report missing definitions.
+- [x] 7.1 Define expected Paseo review mode names by convention.
+- [x] 7.2 Implement `lane review` to launch reviewer modes through Paseo.
 - [x] 7.3 Record aggregate review result as `none`, `approve`, `comment`, or `reject`.
-- [x] 7.4 Allow reviewer outputs to land in `.lane/` without treating them as stable API.
+- [x] 7.4 Start reviewer agents detached so they can run concurrently and surface in Paseo.
+- [x] 7.5 Add a foreground judge phase for the final verdict.
+- [x] 7.6 Allow reviewer and judge mode names to be configured with full Paseo mode names.
 
 ## 8. Forge Finalize
 
@@ -79,5 +82,6 @@
 - [x] 10.1 Write end-to-end workflow examples.
 - [x] 10.2 Document selector resolution.
 - [x] 10.3 Document branch-prefix schema mapping.
-- [x] 10.4 Document required external tools: Paseo, OpenSpec, OpenCode, and optionally `just`/`gh`.
+- [x] 10.4 Document required external tools: Paseo, OpenSpec, git, gh, glab, just, npm, and Python.
 - [x] 10.5 Document migration guidance from old `wt` conceptually, without adding compatibility support.
+- [x] 10.6 Document the install/init split and Paseo-provider-backed review flow.

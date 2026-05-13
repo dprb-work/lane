@@ -7,7 +7,8 @@ the useful "one hand" experience of the existing `wt` helper while removing its
 general-purpose worktree-manager responsibilities.
 
 The new tool is for one environment and one workflow: Paseo-managed workspaces,
-OpenSpec-backed lanes, and OpenCode-driven review perspectives.
+OpenSpec-backed lanes, and Paseo-managed review agents. Provider-specific
+runtimes such as OpenCode, Codex, or Claude Code stay behind Paseo.
 
 ## Problem
 
@@ -44,8 +45,10 @@ In scope:
 - Multi-route lane resolution: current directory, path, branch, slug, lane id,
   PR number, and PR URL.
 - Verification wrapper around repo-defined commands.
-- Review orchestration that invokes OpenCode reviewer agents/prompts by
-  convention while leaving their definitions outside this project.
+- Review orchestration that launches Paseo-managed reviewer agents in parallel,
+  then runs a foreground judge phase to prioritize and contextualize findings.
+- Separate installation script for required local dependencies; `lane init` is
+  repo bootstrap and validation only.
 - Finalize flow that verifies, archives/syncs OpenSpec, creates/updates the PR,
   and records final lane state.
 - Cleanup/abort flow that bows to Paseo archive behavior.
@@ -58,7 +61,8 @@ Out of scope:
 - Graphite, Git Town, or `jj` integration.
 - Tracked per-repo `lane.yaml` policy files.
 - User-facing arguments for lane type or spec schema.
-- Owning OpenCode reviewer perspective definitions.
+- Owning provider-specific reviewer perspective definitions.
+- Installing dependencies from `lane init`.
 
 ## User Model
 
@@ -114,18 +118,22 @@ The initial API intentionally has no `--type`, `--lane-type`, or `--schema` flag
 
 ## Review Policy
 
-Review perspectives should live in OpenCode agents or custom prompts. `lane` only
-invokes them by convention and records the aggregate outcome.
+Review perspectives should live as provider modes exposed through Paseo. `lane`
+passes full mode names to Paseo and records the aggregate outcome.
 
-The initial perspectives are expected to be defined outside this project, for
-example:
+The initial reviewer modes are expected to be defined outside this project:
 
-- security
-- code quality
-- tests/coverage
+- `lane-review-security`
+- `lane-review-quality`
+- `lane-review-tests`
 
-Reviewer output may be written under `.lane/` by the invoking command or agent,
-but that format is not part of the initial lane contract.
+Reviewers run detached so they can execute concurrently and surface in the Paseo
+UI. After they finish, `lane review` runs a foreground judge mode, defaulting to
+`lane-review-judge`, which produces the final verdict.
+
+For the OpenCode provider, a file such as `lane-review-tests.md` is exposed to
+Paseo as mode `lane-review-tests`. Other providers can expose equivalent full
+mode names through Paseo without changing `lane`.
 
 ## Success Criteria
 
@@ -135,5 +143,8 @@ but that format is not part of the initial lane contract.
 - `.lane/state.yaml` stays compact and sufficient.
 - `lane finalize` refuses to complete while the OpenSpec spec is still active.
 - `lane cleanup` uses Paseo archive and guards against losing active spec work.
+- `lane review` starts parallel Paseo reviewer agents and uses a judge phase for
+  the final verdict.
+- Dependency installation is handled by `scripts/install.sh`, not `lane init`.
 - Agents can use the tool through a small command surface without understanding
   Paseo internals.

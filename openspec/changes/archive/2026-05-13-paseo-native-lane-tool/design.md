@@ -7,7 +7,7 @@
 ```text
 Paseo    authoritative runtime and workspace owner
 OpenSpec authoritative spec/change/archive system
-OpenCode reviewer perspective and agent execution system
+Providers OpenCode, Codex, Claude Code, or another runtime behind Paseo
 lane     local lifecycle glue and compact state
 ```
 
@@ -27,6 +27,9 @@ Proposed layout:
 lane/
 ├── README.md
 ├── AGENTS.md
+├── package.json
+├── scripts/
+│   └── install.sh
 ├── openspec/
 │   └── changes/
 │       └── paseo-native-lane-tool/
@@ -118,9 +121,14 @@ Responsibilities:
 
 - Ensure `.lane/` is ignored in the target repo.
 - Install the global `lane-lite` OpenSpec schema if it is not present.
-- Optionally report missing expected OpenCode reviewer agents/prompts without
-  owning their definitions.
-- Validate Paseo CLI availability.
+- Validate required tool availability without installing or upgrading tools.
+- Check the installed Paseo CLI version, fail when below the minimum supported
+  version, and warn when npm reports a newer current version.
+
+Dependency installation belongs to `scripts/install.sh`, not `lane init`.
+The installer uses a user-local npm prefix for Node-distributed CLIs and a
+repo-local `.venv` for Python so it does not require global npm writes or system
+Python package installation.
 
 OpenSpec schema install target:
 
@@ -216,20 +224,30 @@ finalize policy needs durable verification timestamps.
 
 ### `lane review [selector]`
 
-Invoke configured OpenCode review perspectives by convention. The perspective
-definitions are not lane config and are not tracked in this repo.
+Launch configured Paseo review modes. Provider-specific definitions are not lane
+config and are not tracked in this repo.
 
-Expected convention can be documented as agent names such as:
+Default reviewer modes:
 
 ```text
-lane-security-reviewer
-lane-quality-reviewer
-lane-test-reviewer
+lane-review-security
+lane-review-quality
+lane-review-tests
 ```
 
-`lane review` records only the aggregate outcome in `.lane/state.yaml`.
-Individual agents may write files into `.lane/`, but that is not initially a
-stable public schema.
+Review flow:
+
+1. Start all reviewer modes with detached `paseo run --detach --json` calls.
+2. Wait for each reviewer with `paseo wait <agent-id>`.
+3. Collect reviewer output with `paseo logs <agent-id>`.
+4. Run a foreground judge mode, defaulting to `lane-review-judge`, with the
+   reviewer packets.
+5. Parse the judge verdict line and store the aggregate outcome in
+   `.lane/state.yaml`.
+
+`--review-agent <name>` overrides reviewers and can be repeated.
+`--review-judge <name>` overrides the judge. Names are full Paseo provider mode
+names; a trailing `.md` is accepted and removed for OpenCode-style agent files.
 
 ### `lane finalize [selector]`
 
@@ -308,7 +326,7 @@ All successful resolution paths must end at a Paseo workspace path.
 | Worktree creation | path, git worktree add, setup execution | call Paseo create |
 | Workspace path | hash/slug layout | store returned path |
 | Setup and services | `paseo.json` setup/scripts/services | report, do not reimplement |
-| Agents | provider processes and lifecycle | invoke through Paseo/OpenCode conventions only |
+| Agents | provider processes, modes, lifecycle, and UI visibility | invoke through Paseo only |
 | Archive | worktree deletion, associated agents/terminals/storage | call Paseo archive |
 
 Do not parse `$PASEO_HOME` internals unless there is no CLI/API alternative.
@@ -329,12 +347,16 @@ workspace and could make active planning state harder to recover.
 
 ## Review Integration
 
-Perspectives belong to OpenCode agents or prompts. `lane` should not track their
-canonical definitions.
+Perspectives belong to Paseo-exposed provider modes. `lane` should not know
+whether a mode is backed by OpenCode, Codex, Claude Code, or another provider.
 
-The first implementation can simply check for expected agents and tell the user
-what is missing. Later, `lane init` may optionally install suggested global
-OpenCode agents, but that should remain separate from lane state.
+For OpenCode, Paseo discovers selectable OpenCode agent files and exposes them as
+modes. A file named `lane-review-tests.md` maps to mode `lane-review-tests`.
+Other providers can expose equivalent modes through their own Paseo integration.
+
+Reviewers run detached and concurrently so humans can observe them in the Paseo
+UI. The judge runs in the foreground because `lane review` needs a final verdict
+before updating lane state.
 
 ## Forge Integration
 
