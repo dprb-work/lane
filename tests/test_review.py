@@ -29,6 +29,8 @@ def test_run_review_invokes_available_agent(
             return _result('{"agentId":"agent-1","status":"completed"}')
         if argv[:2] == ["paseo", "run"]:
             return _result('{"agentId":"judge-1","status":"completed"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"agent-1","status":"idle"}')
         return _result("Verdict: approve\nComments: none")
 
     result = run_review(tmp_path, runner=runner, expected=("lane-review-quality.md",))
@@ -64,6 +66,8 @@ def test_run_review_starts_reviewers_before_waiting(
             return _result(f'{{"agentId":"{agent_id}","status":"created"}}')
         if argv[:2] == ["paseo", "run"]:
             return _result('{"agentId":"judge-1","status":"completed"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"status":"idle"}')
         return _result("Verdict: approve")
 
     run_review(
@@ -112,6 +116,8 @@ def test_run_review_uses_judge_verdict_over_reviewer_verdicts(
         if argv[:2] == ["paseo", "run"]:
             agent_id = "reviewer-1" if "--detach" in argv else "judge-1"
             return _result(f'{{"agentId":"{agent_id}","status":"completed"}}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"reviewer-1","status":"idle"}')
         if argv[:2] == ["paseo", "logs"] and argv[2] == "reviewer-1":
             return _result("Verdict: reject\nFalse positive")
         return _result("Verdict: approve")
@@ -125,21 +131,69 @@ def test_run_review_uses_judge_verdict_over_reviewer_verdicts(
     assert result.review == "approve"
 
 
+def test_run_review_rejects_when_reviewer_wait_times_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"]:
+            agent_id = "reviewer-1" if "--detach" in argv else "judge-1"
+            return _result(f'{{"agentId":"{agent_id}","status":"completed"}}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"reviewer-1","status":"timeout"}')
+        return _result("Verdict: approve")
+
+    result = run_review(
+        tmp_path,
+        runner=runner,
+        expected=("lane-review-quality",),
+    )
+
+    assert result.review == "reject"
+
+
+def test_run_review_rejects_when_judge_needs_permission(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"] and "--detach" in argv:
+            return _result('{"agentId":"reviewer-1","status":"created"}')
+        if argv[:2] == ["paseo", "run"]:
+            return _result('{"agentId":"judge-1","status":"permission"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"reviewer-1","status":"idle"}')
+        return _result("Verdict: approve")
+
+    result = run_review(
+        tmp_path,
+        runner=runner,
+        expected=("lane-review-quality",),
+    )
+
+    assert result.review == "reject"
+
+
 def test_run_review_rejects_on_explicit_reject_verdict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
 
-    result = run_review(
-        tmp_path,
-        runner=lambda argv, cwd: _result(
-            '{"agentId":"agent-1","status":"created"}'
-            if argv[:2] == ["paseo", "run"]
-            else "Verdict: reject\nReason: request changes"
-        ),
-        expected=("lane-review-quality",),
-    )
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"] and "--detach" in argv:
+            return _result('{"agentId":"agent-1","status":"created"}')
+        if argv[:2] == ["paseo", "run"]:
+            return _result('{"agentId":"judge-1","status":"completed"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"agent-1","status":"idle"}')
+        return _result("Verdict: reject\nReason: request changes")
+
+    result = run_review(tmp_path, runner=runner, expected=("lane-review-quality",))
 
     assert result.review == "reject"
 
@@ -150,15 +204,16 @@ def test_run_review_does_not_parse_verdict_from_prose(
 ) -> None:
     monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
 
-    result = run_review(
-        tmp_path,
-        runner=lambda argv, cwd: _result(
-            '{"agentId":"agent-1","status":"created"}'
-            if argv[:2] == ["paseo", "run"]
-            else "Verdict: approve\nComments: none; no reject-worthy issues"
-        ),
-        expected=("lane-review-quality",),
-    )
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"] and "--detach" in argv:
+            return _result('{"agentId":"agent-1","status":"created"}')
+        if argv[:2] == ["paseo", "run"]:
+            return _result('{"agentId":"judge-1","status":"completed"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"agent-1","status":"idle"}')
+        return _result("Verdict: approve\nComments: none; no reject-worthy issues")
+
+    result = run_review(tmp_path, runner=runner, expected=("lane-review-quality",))
 
     assert result.review == "approve"
 
@@ -169,15 +224,16 @@ def test_run_review_treats_missing_verdict_as_comment(
 ) -> None:
     monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
 
-    result = run_review(
-        tmp_path,
-        runner=lambda argv, cwd: _result(
-            '{"agentId":"agent-1","status":"created"}'
-            if argv[:2] == ["paseo", "run"]
-            else "approve"
-        ),
-        expected=("lane-review-quality",),
-    )
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"] and "--detach" in argv:
+            return _result('{"agentId":"agent-1","status":"created"}')
+        if argv[:2] == ["paseo", "run"]:
+            return _result('{"agentId":"judge-1","status":"completed"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"agentId":"agent-1","status":"idle"}')
+        return _result("approve")
+
+    result = run_review(tmp_path, runner=runner, expected=("lane-review-quality",))
 
     assert result.review == "comment"
 

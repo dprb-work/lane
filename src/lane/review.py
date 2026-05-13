@@ -120,10 +120,11 @@ def _start_reviewer(
         workspace,
     )
     agent_id = _agent_id_from_json(run.stdout)
+    status_failure = _json_status_exit(run, allowed=("created", "running", "completed"))
     return ReviewRun(
         agent=agent,
         paseo_agent_id=agent_id,
-        exit_status=run.returncode,
+        exit_status=run.returncode or status_failure or (0 if agent_id else 1),
         output=_combined_output(run),
     )
 
@@ -141,10 +142,13 @@ def _collect_reviewer(
         workspace,
     )
     logs = _logs(run.paseo_agent_id, paseo, workspace, runner)
+    status_failure = _json_status_exit(wait, allowed=("idle", "completed"))
     return ReviewRun(
         agent=run.agent,
         paseo_agent_id=run.paseo_agent_id,
-        exit_status=run.exit_status or wait.returncode or logs.returncode,
+        exit_status=(
+            run.exit_status or wait.returncode or status_failure or logs.returncode
+        ),
         output="\n".join(
             part
             for part in (run.output, _combined_output(wait), _combined_output(logs))
@@ -186,6 +190,7 @@ def _run_judge(
         workspace,
     )
     agent_id = _agent_id_from_json(run.stdout)
+    status_failure = _json_status_exit(run, allowed=("completed", "idle"))
     logs = None
     if agent_id is not None:
         logs = _logs(agent_id, paseo, workspace, runner)
@@ -198,7 +203,9 @@ def _run_judge(
         )
         if part
     )
-    exit_status = run.returncode if logs is None else run.returncode or logs.returncode
+    exit_status = run.returncode or status_failure or (0 if agent_id else 1)
+    if logs is not None:
+        exit_status = exit_status or logs.returncode
     return ReviewRun(
         agent=judge,
         paseo_agent_id=agent_id,
@@ -253,6 +260,23 @@ def _agent_id_from_json(output: str) -> str | None:
     if isinstance(agent_id, str) and agent_id:
         return agent_id
     return None
+
+
+def _json_status_exit(
+    result: subprocess.CompletedProcess[str],
+    *,
+    allowed: tuple[str, ...],
+) -> int:
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return 1
+    if not isinstance(raw, dict):
+        return 1
+    status = raw.get("status")
+    if not isinstance(status, str):
+        return 1
+    return 0 if status in allowed else 1
 
 
 def _paseo_executable(workspace: Path) -> str | None:
