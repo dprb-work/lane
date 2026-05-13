@@ -79,6 +79,29 @@ def test_run_review_starts_reviewers_before_waiting(
     assert calls[2][:2] == ["paseo", "wait"]
 
 
+def test_run_review_rejects_when_reviewer_wait_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"]:
+            agent_id = "reviewer-1" if "--detach" in argv else "judge-1"
+            return _result(f'{{"agentId":"{agent_id}","status":"completed"}}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result("wait failed", returncode=1)
+        return _result("Verdict: approve")
+
+    result = run_review(
+        tmp_path,
+        runner=runner,
+        expected=("lane-review-quality",),
+    )
+
+    assert result.review == "reject"
+
+
 def test_run_review_rejects_on_explicit_reject_verdict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

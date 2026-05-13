@@ -72,7 +72,7 @@ def run_review(
     )
     runs = (*reviewer_runs, judge_run)
     return ReviewResult(
-        review=_aggregate_review((judge_run,)),
+        review=_aggregate_review(runs),
         runs=runs,
         missing_agents=(),
     )
