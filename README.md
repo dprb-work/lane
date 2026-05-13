@@ -12,7 +12,7 @@ verification, review orchestration, finalize, and cleanup.
 ```text
 Paseo    -> runtime and workspace ownership
 OpenSpec -> required change record, including lightweight lanes
-OpenCode -> reviewer perspectives as agents/prompts
+Providers -> OpenCode, Codex, Claude Code, or another Paseo-backed runtime
 lane     -> glue and lifecycle policy
 ```
 
@@ -38,11 +38,34 @@ spec schema in the initial API.
 
 ## Workflow
 
+Install required local dependencies:
+
+```bash
+scripts/install.sh
+```
+
+For non-interactive or development installs:
+
+```bash
+scripts/install.sh --yes
+scripts/install.sh --yes --dev
+```
+
+The installer owns dependency installation. It installs system tools, Paseo and
+OpenSpec CLIs, npm dependencies, and the editable Python package. `lane init` is
+only repo bootstrap and validation.
+
 Initialize repo support once:
 
 ```bash
 lane init
 ```
+
+`lane init` ensures `.lane/` is ignored, installs the lightweight OpenSpec schema
+if missing, reports missing tools, and prints Paseo version information. It
+errors when the installed Paseo CLI is below the minimum supported version and
+warns when a newer package is available online. It does not install or upgrade
+tools.
 
 Start a new Paseo-backed lane:
 
@@ -69,17 +92,27 @@ runs `npm run verify` when `package.json` has a `verify` script. Verification
 reports the command, exit status, and a concise output summary without mutating
 lane state.
 
-`lane review` looks for OpenCode agents named by convention:
+`lane review` launches Paseo-managed agents using review modes named by
+convention:
 
 ```text
-lane-security-reviewer
-lane-quality-reviewer
-lane-test-reviewer
+lane-review-security
+lane-review-quality
+lane-review-tests
 ```
 
-Available review agents are invoked with `opencode run --agent ...`; missing
-agent definitions are reported. The aggregate result is stored as `none`,
-`approve`, `comment`, or `reject`.
+Pass `--review-agent <name>` one or more times to override that list. Names are
+passed through as full Paseo provider mode names; a trailing `.md` is accepted
+and removed for OpenCode-style agent file names. For the OpenCode provider, a
+file such as `lane-review-tests.md` is exposed to Paseo as mode
+`lane-review-tests`.
+
+Review agents run through detached `paseo run` calls, so the configured Paseo
+provider owns the underlying runtime and reviewers can run concurrently. After
+reviewers finish, `lane review` runs a foreground judge phase with the
+`lane-review-judge` mode. Pass `--review-judge <name>` to use a different full
+Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
+`comment`, or `reject`.
 
 `lane finalize` refuses to proceed while `openspec/changes/<spec>` still exists,
 runs verification, pushes the branch, creates or updates the GitHub PR, stores
@@ -133,9 +166,13 @@ Required external tools:
 | --- | --- |
 | Paseo | Workspace/worktree create, list, archive |
 | OpenSpec | Required lane spec creation and archive workflow |
-| OpenCode | Review perspective invocation |
+| OpenCode/Codex/Claude Code/etc. | Optional provider runtime behind Paseo |
 | `just` or `npm` | Repo-defined verification command |
-| `git` and `gh` | Finalize push and GitHub PR handoff |
+| `git`, `gh`, and `glab` | Forge operations and local branch state |
+
+`lane` is a Python package. Paseo and OpenSpec are installed through npm as
+`@getpaseo/cli` and `@fission-ai/openspec` because those CLIs are distributed as
+Node packages.
 
 `lane` does not implement non-Paseo worktree fallback behavior.
 
@@ -149,8 +186,8 @@ policy.
 
 ## Initial Change
 
-The first comprehensive design record is in:
+The first comprehensive design record is archived in:
 
 ```text
-openspec/changes/paseo-native-lane-tool/
+openspec/changes/archive/2026-05-13-paseo-native-lane-tool/
 ```

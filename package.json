@@ -1,0 +1,12 @@
+{
+  "name": "lane",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "install:tools": "scripts/install.sh",
+    "verify": "ruff check . && pytest"
+  },
+  "dependencies": {
+    "@getpaseo/cli": "^0.1.75"
+  }
+}
