@@ -13,6 +13,6 @@ fallback workflows unless explicitly requested.
 - Use `spec` as the user-facing term for the OpenSpec change record.
 - OpenSpec is obligatory for every lane. Small lanes use the global lightweight
   schema installed by `lane init`.
-- Review perspectives live in OpenCode agents or prompts, not in `lane` repo
-  config.
+- Review perspectives live in Paseo-exposed provider modes, not in `lane` repo
+  config or provider-specific assumptions.
 - Prefer clear local policy over generalization.
