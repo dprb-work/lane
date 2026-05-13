@@ -100,7 +100,7 @@ def test_start_does_not_write_state_when_spec_creation_fails(
 
     assert cli.main(["start", "fix/login"]) == 2
     assert not (workspace / ".lane" / "state.yaml").exists()
-    assert archived == ["fix/login"]
+    assert archived == ["login"]
 
 
 def test_start_rolls_back_when_branch_rename_fails(
@@ -176,7 +176,7 @@ def test_start_reports_rollback_failure_when_spec_creation_fails(
     assert not (workspace / ".lane" / "state.yaml").exists()
 
 
-def test_cleanup_archives_resolved_lane_branch(
+def test_cleanup_archives_resolved_lane_worktree_name(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -197,7 +197,7 @@ def test_cleanup_archives_resolved_lane_branch(
     monkeypatch.setattr(cli, "ensure_pr_merged", lambda pr_url, workspace: None)
 
     assert cli.main(["cleanup"]) == 0
-    assert calls == ["fix/login"]
+    assert calls == ["login"]
 
 
 def test_cleanup_refuses_lane_without_pr(
@@ -240,7 +240,7 @@ def test_cleanup_refuses_active_spec(
     assert calls == []
 
 
-def test_abort_archives_explicit_path_lane_branch(
+def test_abort_archives_explicit_path_lane_worktree_name(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -261,7 +261,7 @@ def test_abort_archives_explicit_path_lane_branch(
     )
 
     assert cli.main(["abort", str(workspace)]) == 0
-    assert calls == ["chore/drop-experiment"]
+    assert calls == ["drop-experiment"]
 
 
 def test_status_resolves_exact_branch_from_known_lanes(

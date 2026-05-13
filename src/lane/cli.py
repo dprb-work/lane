@@ -152,7 +152,7 @@ def handle_start(args: argparse.Namespace) -> int:
             rename_current_branch(branch.branch, cwd=worktree.path)
         except PaseoError as error:
             try:
-                archive_worktree(worktree.branch)
+                archive_worktree(worktree.name)
             except PaseoError as archive_error:
                 raise PaseoError(
                     "branch rename failed and rollback archive failed: "
@@ -180,7 +180,7 @@ def handle_start(args: argparse.Namespace) -> int:
         )
     except OpenSpecError as error:
         try:
-            archive_worktree(worktree.branch)
+            archive_worktree(worktree.name)
         except PaseoError as archive_error:
             raise OpenSpecError(
                 "spec creation failed and rollback archive failed: "
@@ -216,7 +216,7 @@ def handle_cleanup(args: argparse.Namespace) -> int:
         if state.pr is None:
             raise CleanupError("remote branch deletion requires a merged PR")
         delete_remote_branch(state.branch, state.path)
-    result = archive_worktree(state.branch)
+    result = archive_worktree(state.id)
     print(f"archived: {result.name}")
     return 0
 
@@ -228,7 +228,7 @@ def handle_abort(args: argparse.Namespace) -> int:
         close_pr(state.pr, state.path)
     if args.delete_remote_branch:
         delete_remote_branch(state.branch, state.path)
-    result = archive_worktree(state.branch)
+    result = archive_worktree(state.id)
     print(f"aborted: {result.name}")
     return 0
 
