@@ -126,6 +126,9 @@ Responsibilities:
   version, and warn when npm reports a newer current version.
 
 Dependency installation belongs to `scripts/install.sh`, not `lane init`.
+The installer uses a user-local npm prefix for Node-distributed CLIs and a
+repo-local `.venv` for Python so it does not require global npm writes or system
+Python package installation.
 
 OpenSpec schema install target:
 

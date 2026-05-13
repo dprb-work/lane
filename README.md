@@ -51,9 +51,11 @@ scripts/install.sh --yes
 scripts/install.sh --yes --dev
 ```
 
-The installer owns dependency installation. It installs system tools, Paseo and
-OpenSpec CLIs, npm dependencies, and the editable Python package. `lane init` is
-only repo bootstrap and validation.
+The installer owns dependency installation. It installs system tools, installs
+Paseo and OpenSpec CLIs into a user-local npm prefix, installs npm dependencies,
+creates a repo-local `.venv`, and installs the editable Python package there.
+It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
+directory is on `PATH`. `lane init` is only repo bootstrap and validation.
 
 Initialize repo support once:
 
