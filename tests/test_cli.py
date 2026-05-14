@@ -361,6 +361,53 @@ def test_status_materializes_remote_lane_target(
     assert spec_calls == [("login", "lane-lite", "Lane for fix/login", workspace)]
 
 
+def test_status_materialization_reuses_existing_active_spec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "openspec" / "changes" / "login").mkdir(parents=True)
+    spec_calls: list[str] = []
+    archive_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "archive_worktree",
+        lambda name: archive_calls.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="main",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["status", "#123"]) == 0
+
+    state = read_state(workspace)
+    assert state.branch == "fix/login"
+    assert spec_calls == []
+    assert archive_calls == []
+
+
 def test_list_prints_known_lanes(
     tmp_path: Path,
     monkeypatch,

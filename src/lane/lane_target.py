@@ -117,6 +117,7 @@ def _resolve_github_pr(selector: str, cwd: Path, runner: Runner) -> LaneTarget:
     raw = _json_object(result.stdout, "gh pr view")
     branch = _required_str(raw, "headRefName", "gh pr view")
     base = _required_str(raw, "baseRefName", "gh pr view")
+    _require_remote_branch(branch, selector, cwd, runner)
     return LaneTarget(
         selector=selector,
         branch=branch,
@@ -136,6 +137,7 @@ def _resolve_gitlab_mr(selector: str, cwd: Path, runner: Runner) -> LaneTarget:
     raw = _json_object(result.stdout, "glab mr view")
     branch = _first_str(raw, ("source_branch", "sourceBranch"), "glab mr view")
     base = _first_str(raw, ("target_branch", "targetBranch"), "glab mr view")
+    _require_remote_branch(branch, selector, cwd, runner)
     return LaneTarget(
         selector=selector,
         branch=branch,
@@ -154,6 +156,19 @@ def _remote_branch_exists(branch: str, cwd: Path, runner: Runner) -> bool:
         cwd,
     )
     return result.returncode == 0
+
+
+def _require_remote_branch(
+    branch: str,
+    selector: str,
+    cwd: Path,
+    runner: Runner,
+) -> None:
+    if _remote_branch_exists(branch, cwd, runner):
+        return
+    raise LaneTargetError(
+        f"no remote branch matches {branch!r} resolved from {selector!r}"
+    )
 
 
 def _default_base(cwd: Path, runner: Runner) -> str:
