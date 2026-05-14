@@ -1,5 +1,7 @@
 # shared-lane-selector-materialization
 
+Archived after PR 7 merged: https://github.com/dprb-work/lane/pull/7
+
 Resolve lane selectors through one shared path and materialize existing remote
 targets into Paseo-owned lanes when local lane state is missing.
 
