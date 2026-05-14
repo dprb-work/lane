@@ -55,7 +55,18 @@ The installer owns dependency installation. It installs system tools, installs
 Paseo and OpenSpec CLIs into a user-local npm prefix, installs npm dependencies,
 creates a repo-local `.venv`, and installs the editable Python package there.
 It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
-directory is on `PATH`. `lane init` is only repo bootstrap and validation.
+directory is on `PATH`. `lane init` is repo bootstrap and validation.
+
+Register the OpenCode custom tool definition from this checkout when you want
+OpenCode's typed `functions.lane` surface:
+
+```bash
+python3 scripts/register_opencode_tool.py
+```
+
+The registration script renders this checkout path into `opencode/tools/lane.ts`
+and recreates `~/.config/opencode/tools/lane.ts` every time. Restart OpenCode or
+reload its config after registration so the tool definition refreshes.
 
 Initialize repo support once:
 
@@ -63,11 +74,14 @@ Initialize repo support once:
 lane init
 ```
 
-`lane init` ensures `.lane/` is ignored, installs the lightweight OpenSpec schema
-if missing, reports missing tools, and prints Paseo version information. It
-errors when the installed Paseo CLI is below the minimum supported version and
-warns when a newer package is available online. It does not install or upgrade
-tools.
+`lane init` ensures `.lane/` is ignored, creates or updates the repo-local
+`AGENTS.md` with a managed Paseo-native workflow block, installs the lightweight
+OpenSpec schema if missing, reports missing tools, reports OpenCode tool
+registration status, and prints Paseo version information. When the managed
+`AGENTS.md` block already exists, `lane init` replaces it with the current
+instructions. It errors when the installed Paseo CLI is below the minimum
+supported version and warns when a newer package is available online. It does not
+install or upgrade tools.
 
 Start a new Paseo-backed lane:
 
@@ -121,8 +135,8 @@ Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
 `comment`, or `reject`.
 
 `lane finalize` refuses to proceed while `openspec/changes/<spec>` still exists,
-runs verification, pushes the branch, creates or updates the GitHub PR, stores
-the PR URL, and marks the lane `finalized`.
+runs verification, pushes the branch, creates or updates the GitHub PR or GitLab
+MR, stores the PR/MR URL, and marks the lane `finalized`.
 
 `lane cleanup` refuses active specs and unmerged PRs before calling Paseo archive.
 Remote branch deletion requires `--delete-remote-branch` and a merged PR.
@@ -175,6 +189,17 @@ Required external tools:
 | OpenCode/Codex/Claude Code/etc. | Optional provider runtime behind Paseo |
 | `just` or `npm` | Repo-defined verification command |
 | `git`, `gh`, and `glab` | Forge operations and local branch state |
+
+`gh` and `glab` are provider-specific. GitHub repos need `gh`; GitLab repos need
+`glab`; one repo does not need both provider CLIs for normal finalize and cleanup
+work. `lane init` reports all expected tools so missing optional capabilities are
+visible early, while individual commands still fail only when the missing tool
+blocks the selected provider path.
+
+Forge provider inference is intentionally local-policy driven: remotes on
+`github.com` are treated as GitHub, and any other parseable Git remote is treated
+as GitLab-compatible, including self-hosted GitLab instances. Use GitHub remotes
+for GitHub repos and GitLab-style remotes for everything else.
 
 `lane` is a Python package. Paseo and OpenSpec are installed through npm as
 `@getpaseo/cli` and `@fission-ai/openspec` because those CLIs are distributed as

@@ -62,6 +62,37 @@ def test_ensure_pr_merged_accepts_merged_pr(
     )
 
 
+def test_ensure_pr_merged_accepts_merged_gitlab_mr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/glab")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result('{"state":"merged"}\n')
+
+    ensure_pr_merged(
+        "https://gitlab.com/acme/app/-/merge_requests/123",
+        tmp_path,
+        runner=runner,
+    )
+
+    assert calls == [
+        [
+            "glab",
+            "mr",
+            "view",
+            "123",
+            "--repo",
+            "https://gitlab.com/acme/app",
+            "--output",
+            "json",
+        ]
+    ]
+
+
 def test_close_pr_calls_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/gh")
     calls: list[list[str]] = []
@@ -75,6 +106,86 @@ def test_close_pr_calls_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     close_pr("https://github.com/acme/app/pull/123", tmp_path, runner=runner)
 
     assert calls == [["gh", "pr", "close", "https://github.com/acme/app/pull/123"]]
+
+
+def test_close_pr_calls_glab_for_gitlab_mr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/glab")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result("")
+
+    close_pr(
+        "https://gitlab.com/acme/app/-/merge_requests/123",
+        tmp_path,
+        runner=runner,
+    )
+
+    assert calls == [
+        ["glab", "mr", "close", "123", "--repo", "https://gitlab.com/acme/app"]
+    ]
+
+
+def test_close_pr_calls_glab_for_self_hosted_gitlab_mr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/glab")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result("")
+
+    close_pr(
+        "https://git.example.test/acme/app/-/merge_requests/123",
+        tmp_path,
+        runner=runner,
+    )
+
+    assert calls == [
+        [
+            "glab",
+            "mr",
+            "close",
+            "123",
+            "--repo",
+            "https://git.example.test/acme/app",
+        ]
+    ]
+
+
+def test_close_pr_preserves_self_hosted_gitlab_port(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/glab")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result("")
+
+    close_pr(
+        "https://git.example.test:8443/acme/app/-/merge_requests/123",
+        tmp_path,
+        runner=runner,
+    )
+
+    assert calls == [
+        [
+            "glab",
+            "mr",
+            "close",
+            "123",
+            "--repo",
+            "https://git.example.test:8443/acme/app",
+        ]
+    ]
 
 
 def test_delete_remote_branch_calls_git(
@@ -95,6 +206,27 @@ def test_delete_remote_branch_calls_git(
     assert calls == [
         ["git", "remote", "-v"],
         ["git", "push", "upstream", "--delete", "fix/login"],
+    ]
+
+
+def test_delete_remote_branch_uses_gitlab_remote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/git")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("origin\thttps://gitlab.com/acme/app.git (fetch)\n")
+        return _result("")
+
+    delete_remote_branch("fix/login", tmp_path, runner=runner)
+
+    assert calls == [
+        ["git", "remote", "-v"],
+        ["git", "push", "origin", "--delete", "fix/login"],
     ]
 
 

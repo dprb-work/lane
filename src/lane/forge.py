@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from lane.forge_remote import ForgeRemote, ForgeRemoteError, infer_forge_remote
 from lane.github_remote import GitHubRemoteError, infer_github_remote
 from lane.state import LaneState
 from lane.verify import VerifyResult
@@ -45,12 +47,26 @@ def finalize_pr(
     runner: Runner | None = None,
 ) -> ForgeResult:
     _require_tool("git")
-    _require_tool("gh")
     runner = _run if runner is None else runner
     try:
-        remote = infer_github_remote(state.path, runner=runner)
-    except GitHubRemoteError as error:
+        remote = infer_forge_remote(state.path, runner=runner)
+    except ForgeRemoteError as error:
         raise ForgeError(str(error)) from error
+    if remote.provider == "github":
+        _require_tool("gh", purpose="GitHub PR finalization")
+        return _finalize_github_pr(state, verification, remote, runner)
+    if remote.provider == "gitlab":
+        _require_tool("glab", purpose="GitLab MR finalization")
+        return _finalize_gitlab_mr(state, verification, remote, runner)
+    raise ForgeError(f"unsupported forge provider: {remote.provider}")
+
+
+def _finalize_github_pr(
+    state: LaneState,
+    verification: VerifyResult,
+    remote: ForgeRemote,
+    runner: Runner,
+) -> ForgeResult:
     repo = remote.repo
     _run_required(["git", "push", "-u", remote.name, state.branch], state.path, runner)
 
@@ -89,6 +105,61 @@ def finalize_pr(
     return ForgeResult(repo=repo, pr_url=pr_url)
 
 
+def _finalize_gitlab_mr(
+    state: LaneState,
+    verification: VerifyResult,
+    remote: ForgeRemote,
+    runner: Runner,
+) -> ForgeResult:
+    repo = remote.repo
+    _run_required(["git", "push", "-u", remote.name, state.branch], state.path, runner)
+
+    title = _pr_title(state.branch, state.id)
+    body = pr_body(state, verification)
+    existing = _existing_mr_url(state.branch, state.path, runner)
+    if existing is None:
+        create = _run_required(
+            [
+                "glab",
+                "mr",
+                "create",
+                "--title",
+                title,
+                "--description",
+                body,
+                "--target-branch",
+                state.base,
+                "--source-branch",
+                state.branch,
+                "--yes",
+            ],
+            state.path,
+            runner,
+        )
+        mr_url = _extract_url(create.stdout)
+    else:
+        _run_required(
+            [
+                "glab",
+                "mr",
+                "update",
+                state.branch,
+                "--title",
+                title,
+                "--description",
+                body,
+                "--yes",
+            ],
+            state.path,
+            runner,
+        )
+        mr_url = existing
+
+    if mr_url == "":
+        raise ForgeError("glab did not return an MR URL")
+    return ForgeResult(repo=repo, pr_url=mr_url)
+
+
 def pr_body(state: LaneState, verification: VerifyResult) -> str:
     return "\n".join(
         [
@@ -118,6 +189,25 @@ def _existing_pr_url(branch: str, cwd: Path, runner: Runner) -> str | None:
     return url or None
 
 
+def _existing_mr_url(branch: str, cwd: Path, runner: Runner) -> str | None:
+    result = runner(["glab", "mr", "view", branch, "--output", "json"], cwd)
+    if result.returncode != 0:
+        return None
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    url = raw.get("web_url") or raw.get("webUrl") or raw.get("url")
+    return url if isinstance(url, str) and url else None
+
+
+def _extract_url(output: str) -> str:
+    for token in output.split():
+        if token.startswith("http://") or token.startswith("https://"):
+            return token.rstrip(".,")
+    return output.strip()
+
+
 def _pr_title(branch: str, lane_id: str) -> str:
     branch_type = branch.split("/", maxsplit=1)[0]
     return f"{branch_type}: {lane_id.replace('-', ' ')}"
@@ -135,9 +225,10 @@ def _run_required(
     return result
 
 
-def _require_tool(tool: str) -> None:
+def _require_tool(tool: str, *, purpose: str | None = None) -> None:
     if shutil.which(tool) is None:
-        raise ForgeError(f"required forge executable not found on PATH: {tool}")
+        requirement = f"{purpose} requires" if purpose is not None else "required"
+        raise ForgeError(f"{requirement} `{tool}` on PATH")
 
 
 def _run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
