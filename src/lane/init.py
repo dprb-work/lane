@@ -9,7 +9,7 @@ LANE_IGNORE_ENTRY = ".lane/"
 LANE_LITE_SCHEMA = "lane-lite"
 MIN_PASEO_VERSION = "0.1.75"
 PASEO_NPM_PACKAGE = "@getpaseo/cli"
-REQUIRED_TOOLS = ("paseo", "openspec", "git", "gh", "glab", "just")
+REPORTED_TOOLS = ("paseo", "openspec", "git", "gh", "glab", "just")
 AGENT_INSTRUCTIONS_HEADER = "<!-- lane:instructions:start -->"
 AGENT_INSTRUCTIONS_FOOTER = "<!-- lane:instructions:end -->"
 
@@ -72,7 +72,7 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     paseo_check = check_paseo_cli(target)
     missing_tools = tuple(
         tool
-        for tool in REQUIRED_TOOLS
+        for tool in REPORTED_TOOLS
         if (tool == "paseo" and paseo_check.version is None)
         or (tool != "paseo" and shutil.which(tool) is None)
     )
@@ -102,6 +102,13 @@ def compact_opencode_registration_note() -> str:
         / "register_opencode_tool.py"
     )
     return f"register opencode tool: python3 {script}"
+
+
+def compact_tool_requirement_note() -> str:
+    return (
+        "tool note: gh and glab are provider-specific; GitHub repos need gh, "
+        "GitLab repos need glab, and you do not need both for one provider"
+    )
 
 
 @dataclass(frozen=True)

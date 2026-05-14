@@ -135,8 +135,8 @@ Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
 `comment`, or `reject`.
 
 `lane finalize` refuses to proceed while `openspec/changes/<spec>` still exists,
-runs verification, pushes the branch, creates or updates the GitHub PR, stores
-the PR URL, and marks the lane `finalized`.
+runs verification, pushes the branch, creates or updates the GitHub PR or GitLab
+MR, stores the PR/MR URL, and marks the lane `finalized`.
 
 `lane cleanup` refuses active specs and unmerged PRs before calling Paseo archive.
 Remote branch deletion requires `--delete-remote-branch` and a merged PR.
@@ -189,6 +189,17 @@ Required external tools:
 | OpenCode/Codex/Claude Code/etc. | Optional provider runtime behind Paseo |
 | `just` or `npm` | Repo-defined verification command |
 | `git`, `gh`, and `glab` | Forge operations and local branch state |
+
+`gh` and `glab` are provider-specific. GitHub repos need `gh`; GitLab repos need
+`glab`; one repo does not need both provider CLIs for normal finalize and cleanup
+work. `lane init` reports all expected tools so missing optional capabilities are
+visible early, while individual commands still fail only when the missing tool
+blocks the selected provider path.
+
+Forge provider inference is intentionally local-policy driven: remotes on
+`github.com` are treated as GitHub, and any other parseable Git remote is treated
+as GitLab-compatible, including self-hosted GitLab instances. Use GitHub remotes
+for GitHub repos and GitLab-style remotes for everything else.
 
 `lane` is a Python package. Paseo and OpenSpec are installed through npm as
 `@getpaseo/cli` and `@fission-ai/openspec` because those CLIs are distributed as

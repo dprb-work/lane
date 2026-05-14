@@ -15,7 +15,12 @@ from lane.cleanup import (
     ensure_pr_merged,
 )
 from lane.forge import ForgeError, finalize_pr
-from lane.init import InitError, compact_opencode_registration_note, run_init
+from lane.init import (
+    InitError,
+    compact_opencode_registration_note,
+    compact_tool_requirement_note,
+    run_init,
+)
 from lane.openspec import OpenSpecError, create_spec, require_spec_archived
 from lane.paseo import (
     PaseoError,
@@ -210,6 +215,7 @@ def handle_init(args: argparse.Namespace) -> int:
     print(f"agent instructions {result.agents_action}: {result.agents}")
     print(f"lane-lite schema: {result.schema_dir}")
     print(compact_opencode_registration_note())
+    print(compact_tool_requirement_note())
     if result.paseo_version is not None:
         print(f"paseo CLI: {result.paseo_version}")
     if result.paseo_current_version is not None:

@@ -9,9 +9,11 @@ from lane.init import (
     AGENT_INSTRUCTIONS_HEADER,
     InitError,
     check_paseo_cli,
+    compact_tool_requirement_note,
     ensure_agent_instructions,
     ensure_lane_ignored,
     install_lane_lite_schema,
+    run_init,
 )
 
 
@@ -37,6 +39,32 @@ def test_install_lane_lite_schema(tmp_path: Path) -> None:
     assert schema_dir == tmp_path / ".local/share/openspec/schemas/lane-lite"
     assert (schema_dir / "schema.yaml").exists()
     assert (schema_dir / "templates/lane.md").exists()
+
+
+def test_run_init_reports_optional_command_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.init.shutil.which",
+        lambda tool: "/usr/bin/tool" if tool in {"git", "paseo"} else None,
+    )
+    monkeypatch.setattr(
+        "lane.init.subprocess.run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, "0.1.75\n", ""),
+    )
+
+    result = run_init(tmp_path, home=tmp_path)
+
+    assert result.missing_tools == ("openspec", "gh", "glab", "just")
+
+
+def test_compact_tool_requirement_note_explains_provider_specific_clis() -> None:
+    note = compact_tool_requirement_note()
+
+    assert "GitHub repos need gh" in note
+    assert "GitLab repos need glab" in note
+    assert "do not need both" in note
 
 
 def test_ensure_agent_instructions_creates_agents(tmp_path: Path) -> None:
