@@ -378,7 +378,7 @@ def _resolve_lane(selector: str | None) -> LaneState:
 
 def _known_lane_states() -> list[LaneState]:
     lanes: list[LaneState] = []
-    for worktree in list_worktrees():
+    for worktree in list_worktrees(cwd=Path.cwd()):
         try:
             lanes.append(read_state(worktree.path))
         except FileNotFoundError:

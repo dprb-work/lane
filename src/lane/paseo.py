@@ -76,12 +76,81 @@ def rename_current_branch(
         raise PaseoError(f"git branch rename failed: {message}")
 
 
-def list_worktrees(*, runner: Runner | None = None) -> list[PaseoWorktree]:
+def list_worktrees(
+    *,
+    cwd: Path | None = None,
+    runner: Runner | None = None,
+) -> list[PaseoWorktree]:
     runner = _run if runner is None else runner
-    raw = _run_json(["paseo", "worktree", "ls", "--json"], cwd=None, runner=runner)
+    try:
+        raw = _run_json(["paseo", "worktree", "ls", "--json"], cwd=cwd, runner=runner)
+    except PaseoError as error:
+        if cwd is None or "cwd or repoRoot is required" not in str(error):
+            raise
+        raw = _list_worktrees_with_daemon_client(cwd=cwd, runner=runner)
     if not isinstance(raw, list):
         raise PaseoError("paseo worktree ls returned invalid JSON")
     return [_worktree_from_list_item(item) for item in raw]
+
+
+def _list_worktrees_with_daemon_client(
+    *,
+    cwd: Path,
+    runner: Runner,
+) -> list[dict[str, Any]]:
+    client_module = _paseo_client_module_path()
+    script = f"""
+import {{ connectToDaemon }} from {json.dumps(client_module.as_uri())};
+
+const client = await connectToDaemon({{}});
+try {{
+  const response = await client.getPaseoWorktreeList({{ cwd: process.argv[1] }});
+  console.log(JSON.stringify(response));
+}} finally {{
+  await client.close().catch(() => {{}});
+}}
+"""
+    result = _run_command(
+        ["node", "--input-type=module", "-e", script, str(cwd)],
+        cwd=cwd,
+        runner=runner,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "command failed"
+        raise PaseoError(f"paseo daemon worktree list failed: {message}")
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PaseoError("paseo daemon returned invalid JSON") from error
+    if not isinstance(response, dict):
+        raise PaseoError("paseo daemon returned invalid JSON")
+    error = response.get("error")
+    if error:
+        message = error.get("message") if isinstance(error, dict) else str(error)
+        raise PaseoError(f"paseo daemon worktree list failed: {message}")
+    worktrees = response.get("worktrees")
+    if not isinstance(worktrees, list):
+        raise PaseoError("paseo daemon worktree list returned invalid JSON")
+    return [
+        {
+            "name": Path(_required_str(item, "worktreePath")).name,
+            "branch": item.get("branchName") or "-",
+            "cwd": _required_str(item, "worktreePath"),
+        }
+        for item in worktrees
+        if isinstance(item, dict)
+    ]
+
+
+def _paseo_client_module_path() -> Path:
+    paseo = shutil.which("paseo")
+    if paseo is None:
+        raise PaseoError("paseo CLI not found on PATH")
+    package_root = Path(paseo).resolve().parents[1]
+    client_module = package_root / "dist" / "utils" / "client.js"
+    if not client_module.exists():
+        raise PaseoError(f"paseo client module not found: {client_module}")
+    return client_module
 
 
 def archive_worktree(

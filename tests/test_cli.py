@@ -274,7 +274,7 @@ def test_status_resolves_exact_branch_from_known_lanes(
     monkeypatch.setattr(
         cli,
         "list_worktrees",
-        lambda: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
     )
 
     assert cli.main(["status", "fix/login"]) == 0
@@ -290,7 +290,7 @@ def test_status_resolves_slug_from_known_lanes(
     monkeypatch.setattr(
         cli,
         "list_worktrees",
-        lambda: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
     )
 
     assert cli.main(["status", "login"]) == 0
@@ -310,7 +310,7 @@ def test_status_resolves_pr_selector_from_known_lanes(
     monkeypatch.setattr(
         cli,
         "list_worktrees",
-        lambda: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
     )
 
     assert cli.main(["status", "#123"]) == 0
@@ -335,7 +335,7 @@ def test_list_prints_known_lanes(
     monkeypatch.setattr(
         cli,
         "list_worktrees",
-        lambda: [
+        lambda **_: [
             PaseoWorktree(name="dashboard", branch="feat/dashboard", path=second),
             PaseoWorktree(name="login", branch="fix/login", path=first),
         ],
@@ -370,7 +370,9 @@ def test_list_skips_worktrees_without_lane_state(
     monkeypatch.setattr(
         cli,
         "list_worktrees",
-        lambda: [PaseoWorktree(name="external", branch="fix/external", path=workspace)],
+        lambda **_: [
+            PaseoWorktree(name="external", branch="fix/external", path=workspace)
+        ],
     )
 
     assert cli.main(["list"]) == 0
