@@ -74,6 +74,7 @@ path, OpenSpec spec record, review state, and optional PR.
 ```bash
 lane start feat/add-workspace-status
 lane status
+lane list
 lane verify
 lane review
 lane finalize

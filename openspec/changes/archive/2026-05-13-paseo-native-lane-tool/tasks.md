@@ -25,6 +25,7 @@
 - [x] 3.4 Resolve slugs from known lanes.
 - [x] 3.5 Resolve PR selectors using `#123` and PR URLs.
 - [x] 3.6 Fail with candidate list on ambiguity.
+- [x] 3.7 Implement `lane list` for known Paseo-backed lane states.
 
 ## 4. Paseo Integration
 

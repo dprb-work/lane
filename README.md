@@ -83,6 +83,7 @@ Work from inside the Paseo workspace, then use:
 
 ```bash
 lane status
+lane list
 lane verify
 lane review
 lane finalize
@@ -93,6 +94,9 @@ lane cleanup
 runs `npm run verify` when `package.json` has a `verify` script. Verification
 reports the command, exit status, and a concise output summary without mutating
 lane state.
+
+`lane list` shows known lane state discovered from Paseo-listed worktrees. It
+prints an aligned table with lane id, status, branch, review, PR, and path.
 
 `lane review` launches Paseo-managed agents using review modes named by
 convention:

@@ -59,9 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status.set_defaults(handler=handle_status)
 
+    list_command = subparsers.add_parser("list", help="List known lanes.")
+    list_command.set_defaults(handler=handle_list)
+
     pending_commands = [
         "attach",
-        "list",
     ]
     init = subparsers.add_parser("init", help="Initialize lane support.")
     init.add_argument(
@@ -224,6 +226,12 @@ def handle_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_list(args: argparse.Namespace) -> int:
+    lanes = sorted(_known_lane_states(), key=lambda lane: (lane.id, lane.branch))
+    _print_lane_table(lanes)
+    return 0
+
+
 def handle_cleanup(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
@@ -321,6 +329,33 @@ def main(argv: list[str] | None = None) -> int:
 def _print_state(state: LaneState) -> None:
     for key, value in state_to_dict(state).items():
         print(f"{key}: {value}")
+
+
+def _print_lane_table(lanes: list[LaneState]) -> None:
+    headers = ("ID", "STATUS", "BRANCH", "REVIEW", "PR", "PATH")
+    rows = [
+        (
+            state.id,
+            state.status,
+            state.branch,
+            state.review,
+            state.pr or "-",
+            str(state.path),
+        )
+        for state in lanes
+    ]
+    widths = [
+        max(len(row[index]) for row in (headers, *rows))
+        for index in range(len(headers))
+    ]
+    print(_format_lane_row(headers, widths))
+    for row in rows:
+        print(_format_lane_row(row, widths))
+
+
+def _format_lane_row(row: tuple[str, ...], widths: list[int]) -> str:
+    padded = [value.ljust(widths[index]) for index, value in enumerate(row[:-1])]
+    return "  ".join([*padded, row[-1]])
 
 
 def _resolve_lane(selector: str | None) -> LaneState:
