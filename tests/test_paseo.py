@@ -10,6 +10,7 @@ from lane.paseo import (
     PaseoError,
     PaseoWorktree,
     archive_worktree,
+    checkout_branch_worktree,
     create_worktree,
     list_worktrees,
     rename_current_branch,
@@ -53,6 +54,48 @@ def test_create_worktree_calls_paseo_branch_off(
                 "login",
                 "--base",
                 "main",
+                "--cwd",
+                "/repo",
+                "--json",
+            ],
+            Path("/repo"),
+        )
+    ]
+
+
+def test_checkout_branch_worktree_calls_paseo_checkout_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.paseo.shutil.which", lambda _: "/usr/bin/paseo")
+    calls: list[tuple[list[str], Path | None]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, cwd))
+        return _result(
+            '{"name":"login","branchName":"fix/login","worktreePath":"/tmp/login"}'
+        )
+
+    worktree = checkout_branch_worktree(
+        "fix/login",
+        cwd=Path("/repo"),
+        runner=runner,
+    )
+
+    assert worktree == PaseoWorktree(
+        name="login",
+        branch="fix/login",
+        path=Path("/tmp/login"),
+    )
+    assert calls == [
+        (
+            [
+                "paseo",
+                "worktree",
+                "create",
+                "--mode",
+                "checkout-branch",
+                "--branch",
+                "fix/login",
                 "--cwd",
                 "/repo",
                 "--json",

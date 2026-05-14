@@ -161,7 +161,11 @@ lane status https://gitlab.com/org/repo/-/merge_requests/123
 ```
 
 Ambiguous known-lane matches fail with candidate branches. Non-path selectors are
-resolved against lane state found in Paseo-listed worktrees.
+resolved through the shared lane-target resolver. Existing local lane state is
+preferred; when a branch or PR/MR selector resolves to an existing remote branch
+without local lane state, `lane` asks Paseo to check out that branch and writes
+normal lane state before running the requested command. Missing local and remote
+targets fail without creating a new branch.
 
 ## Branch Schemas
 

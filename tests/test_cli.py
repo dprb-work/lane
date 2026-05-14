@@ -316,6 +316,248 @@ def test_status_resolves_pr_selector_from_known_lanes(
     assert cli.main(["status", "#123"]) == 0
 
 
+def test_status_materializes_remote_lane_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    spec_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login-review", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="release",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["status", "#123"]) == 0
+    state = read_state(workspace)
+    assert state.id == "login-review"
+    assert state.branch == "fix/login"
+    assert state.base == "release"
+    assert state.spec == "login"
+    assert state.pr == "https://github.com/acme/app/pull/123"
+    assert spec_calls == []
+
+
+def test_status_materialization_preserves_existing_active_spec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "openspec" / "changes" / "login").mkdir(parents=True)
+    spec_calls: list[str] = []
+    archive_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login-review", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "archive_worktree",
+        lambda name: archive_calls.append(name)
+        or PaseoArchiveResult(name=name, removed_agents=()),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="main",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["status", "#123"]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login-review"
+    assert state.branch == "fix/login"
+    assert state.spec == "login"
+    assert spec_calls == []
+    assert archive_calls == []
+
+
+def test_finalize_materialized_remote_lane_does_not_recreate_archived_spec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    spec_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login-review", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="main",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=0,
+            summary="ok",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "finalize_pr",
+        lambda state, verification: ForgeResult(
+            repo="acme/app",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["finalize", "#123"]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login-review"
+    assert state.spec == "login"
+    assert state.status == "finalized"
+    assert spec_calls == []
+
+
+def test_cleanup_materialized_remote_lane_does_not_recreate_archived_spec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    spec_calls: list[str] = []
+    archive_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login-review", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="main",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+    monkeypatch.setattr(cli, "ensure_pr_merged", lambda pr_url, workspace: None)
+    monkeypatch.setattr(
+        cli,
+        "archive_worktree",
+        lambda name: archive_calls.append(name)
+        or PaseoArchiveResult(name=name, removed_agents=()),
+    )
+
+    assert cli.main(["cleanup", "#123"]) == 0
+
+    assert spec_calls == []
+    assert archive_calls == ["login-review"]
+
+
+def test_abort_materialized_remote_lane_archives_paseo_worktree_name(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    archive_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login-review", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="main",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "ensure_clean_worktree",
+        lambda workspace, *, allow_dirty: None,
+    )
+    monkeypatch.setattr(
+        cli,
+        "archive_worktree",
+        lambda name: archive_calls.append(name)
+        or PaseoArchiveResult(name=name, removed_agents=()),
+    )
+
+    assert cli.main(["abort", "#123"]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login-review"
+    assert state.spec == "login"
+    assert archive_calls == ["login-review"]
+
+
 def test_list_prints_known_lanes(
     tmp_path: Path,
     monkeypatch,

@@ -21,20 +21,23 @@ from lane.init import (
     compact_tool_requirement_note,
     run_init,
 )
-from lane.openspec import OpenSpecError, create_spec, require_spec_archived
+from lane.lane_target import LaneTarget, LaneTargetError, resolve_lane_target
+from lane.openspec import (
+    OpenSpecError,
+    create_spec,
+    require_spec_archived,
+)
 from lane.paseo import (
     PaseoError,
     archive_worktree,
+    checkout_branch_worktree,
     create_worktree,
     list_worktrees,
     rename_current_branch,
 )
 from lane.resolve import (
     resolve_current_directory,
-    resolve_exact_branch,
     resolve_filesystem_path,
-    resolve_pr_selector,
-    resolve_slug,
 )
 from lane.review import ReviewError, run_review
 from lane.state import STATE_SCHEMA, LaneState, read_state, state_to_dict, write_state
@@ -177,15 +180,11 @@ def handle_start(args: argparse.Namespace) -> int:
                 ) from error
             raise
         worktree = replace(worktree, branch=branch.branch)
-    state = LaneState(
-        schema=STATE_SCHEMA,
-        id=branch.slug,
-        status="active",
+    state = _new_lane_state(
         branch=branch.branch,
+        lane_id=branch.slug,
         base=args.base,
         path=worktree.path,
-        spec=branch.slug,
-        review="none",
         pr=None,
     )
     try:
@@ -324,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
         CleanupError,
         ForgeError,
         InitError,
+        LaneTargetError,
         OpenSpecError,
         PaseoError,
         ReviewError,
@@ -377,11 +377,47 @@ def _resolve_lane(selector: str | None) -> LaneState:
         return resolve_filesystem_path(selector)
 
     lanes = _known_lane_states()
-    if selector.startswith("#") or selector.startswith(("http://", "https://")):
-        return resolve_pr_selector(selector, lanes)
-    if "/" in selector:
-        return resolve_exact_branch(selector, lanes)
-    return resolve_slug(selector, lanes)
+    target = resolve_lane_target(selector, lanes, cwd=Path.cwd())
+    if target.state is not None:
+        return target.state
+    return _materialize_lane_target(target)
+
+
+def _materialize_lane_target(target: LaneTarget) -> LaneState:
+    branch = parse_branch(target.branch)
+    worktree = checkout_branch_worktree(branch.branch, cwd=Path.cwd())
+    state = _new_lane_state(
+        branch=branch.branch,
+        lane_id=worktree.name,
+        base=target.base,
+        path=worktree.path,
+        pr=target.pr_url,
+        spec=branch.slug,
+    )
+    write_state(worktree.path, state)
+    return state
+
+
+def _new_lane_state(
+    *,
+    branch: str,
+    lane_id: str,
+    base: str,
+    path: Path,
+    pr: str | None,
+    spec: str | None = None,
+) -> LaneState:
+    return LaneState(
+        schema=STATE_SCHEMA,
+        id=lane_id,
+        status="active",
+        branch=branch,
+        base=base,
+        path=path,
+        spec=lane_id if spec is None else spec,
+        review="none",
+        pr=pr,
+    )
 
 
 def _known_lane_states() -> list[LaneState]:

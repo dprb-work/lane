@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlparse
 
+from lane.selectors import pr_number
 from lane.state import LaneState, find_state_path, read_state
 
 
@@ -37,34 +37,17 @@ def resolve_slug(slug: str, lanes: list[LaneState]) -> LaneState:
 
 
 def resolve_pr_selector(selector: str, lanes: list[LaneState]) -> LaneState:
-    pr_number = _pr_number(selector)
-    if pr_number is None:
+    selector_pr_number = pr_number(selector)
+    if selector_pr_number is None:
         raise ValueError(f"not a PR selector: {selector!r}")
 
     matches = [
         lane
         for lane in lanes
         if lane.pr is not None
-        and (lane.pr == selector or _pr_number(lane.pr) == pr_number)
+        and (lane.pr == selector or pr_number(lane.pr) == selector_pr_number)
     ]
     return _single_match(matches, selector)
-
-
-def _pr_number(selector: str) -> str | None:
-    if selector.startswith("#") and selector[1:].isdigit():
-        return selector[1:]
-
-    parsed = urlparse(selector)
-    if parsed.scheme not in {"http", "https"}:
-        return None
-
-    parts = [part for part in parsed.path.split("/") if part]
-    for marker in ("pull", "pulls", "merge_requests"):
-        if marker in parts:
-            index = parts.index(marker) + 1
-            if index < len(parts) and parts[index].isdigit():
-                return parts[index]
-    return None
 
 
 def _single_match(matches: list[LaneState], selector: str) -> LaneState:
