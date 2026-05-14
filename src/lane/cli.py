@@ -25,7 +25,6 @@ from lane.lane_target import LaneTarget, LaneTargetError, resolve_lane_target
 from lane.openspec import (
     OpenSpecError,
     create_spec,
-    is_spec_active,
     require_spec_archived,
 )
 from lane.paseo import (
@@ -394,23 +393,6 @@ def _materialize_lane_target(target: LaneTarget) -> LaneState:
         path=worktree.path,
         pr=target.pr_url,
     )
-    try:
-        if not is_spec_active(worktree.path, branch.slug):
-            create_spec(
-                branch.slug,
-                schema=branch.spec_schema,
-                description=f"Lane for {branch.branch}",
-                cwd=worktree.path,
-            )
-    except OpenSpecError as error:
-        try:
-            archive_worktree(worktree.name)
-        except PaseoError as archive_error:
-            raise OpenSpecError(
-                "spec creation failed and rollback archive failed: "
-                f"{error}; {archive_error}"
-            ) from error
-        raise
     write_state(worktree.path, state)
     return state
 

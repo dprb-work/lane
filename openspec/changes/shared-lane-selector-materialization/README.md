@@ -45,8 +45,8 @@ Out of scope:
   lane and no matching remote branch exist.
 - Materialized lanes use Paseo as the authoritative workspace owner and
   do not call `git worktree add` directly.
-- Materialized lanes get normal `.lane/state.yaml` state and an OpenSpec
-  spec record consistent with the branch prefix policy.
+- Materialized lanes get normal `.lane/state.yaml` state and preserve the
+  branch's existing OpenSpec state, whether active or archived.
 - Ambiguous local or provider selector matches fail before materialization.
 
 ## Design Notes
@@ -76,8 +76,8 @@ Out of scope:
   remote branch existence.
 - [x] Add a Paseo wrapper for creating or attaching a workspace from an existing
   branch.
-- [x] Create lane state and the required OpenSpec spec record when materializing
-  a remote lane target.
+- [x] Create lane state without recreating OpenSpec records when materializing a
+  remote lane target.
 - [x] Make command handlers use materialized lanes only after local selector
   resolution fails.
 - [x] Add tests for local lane preference, PR number resolution, remote branch
