@@ -101,7 +101,7 @@ def compact_opencode_registration_note() -> str:
         / "scripts"
         / "register_opencode_tool.py"
     )
-    return f"register opencode tool: python {script}"
+    return f"register opencode tool: python3 {script}"
 
 
 @dataclass(frozen=True)

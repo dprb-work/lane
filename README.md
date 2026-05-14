@@ -61,7 +61,7 @@ Register the OpenCode custom tool definition from this checkout when you want
 OpenCode's typed `functions.lane` surface:
 
 ```bash
-python scripts/register_opencode_tool.py
+python3 scripts/register_opencode_tool.py
 ```
 
 The registration script renders this checkout path into `opencode/tools/lane.ts`
