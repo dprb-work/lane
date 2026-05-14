@@ -10,6 +10,42 @@ LANE_LITE_SCHEMA = "lane-lite"
 MIN_PASEO_VERSION = "0.1.75"
 PASEO_NPM_PACKAGE = "@getpaseo/cli"
 REQUIRED_TOOLS = ("paseo", "openspec", "git", "gh", "glab", "just")
+AGENT_INSTRUCTIONS_HEADER = "<!-- lane:instructions:start -->"
+AGENT_INSTRUCTIONS_FOOTER = "<!-- lane:instructions:end -->"
+
+AGENT_INSTRUCTIONS = f"""{AGENT_INSTRUCTIONS_HEADER}
+## Mandatory Lane Workflow
+
+This repository uses `lane` as the required Paseo-native lifecycle workflow.
+Agents MUST use `lane` commands and Paseo-owned workspaces for task work in this
+repository.
+
+Paseo owns workspace and worktree creation, setup, services, provider runtimes,
+agents, terminals, and archive behavior. `lane` owns the compact lifecycle policy
+around one coherent line of work: ignored `.lane/` state, required OpenSpec specs,
+verification, review orchestration, finalize, cleanup, and abort.
+
+Do not create, switch, push, finalize, or clean up task work with raw
+`git worktree`, raw `git push`, or ad hoc checkout commands. Use the `lane` CLI
+instead. The only allowed exceptions are when the user explicitly instructs you
+to bypass `lane`, or when `lane` and Paseo are unavailable. If an exception
+applies, state it before using raw Git or the source checkout.
+
+Required commands:
+
+- Initialize repo support with `lane init`.
+- Start Paseo-backed lanes with `lane start <type>/<slug>`.
+- Inspect work with `lane status` and `lane list`.
+- Verify with `lane verify`.
+- Run review perspectives with `lane review`.
+- Prepare PR handoff with `lane finalize`.
+- Retire merged or canceled lanes with `lane cleanup` or `lane abort`.
+
+OpenCode, Codex, Claude Code, and other runtimes are provider implementations
+behind Paseo. Keep provider-specific assumptions out of repo-local workflow
+policy unless the user explicitly asks for them.
+{AGENT_INSTRUCTIONS_FOOTER}
+"""
 
 
 class InitError(RuntimeError):
@@ -19,6 +55,8 @@ class InitError(RuntimeError):
 @dataclass(frozen=True)
 class InitResult:
     gitignore: Path
+    agents: Path
+    agents_action: str
     schema_dir: Path
     missing_tools: tuple[str, ...]
     paseo_version: str | None
@@ -29,6 +67,7 @@ class InitResult:
 def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     target = target.resolve()
     ensure_lane_ignored(target)
+    agents_action = ensure_agent_instructions(target)
     schema_dir = install_lane_lite_schema(Path.home() if home is None else home)
     paseo_check = check_paseo_cli(target)
     missing_tools = tuple(
@@ -39,12 +78,30 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     )
     return InitResult(
         gitignore=target / ".gitignore",
+        agents=target / "AGENTS.md",
+        agents_action=agents_action,
         schema_dir=schema_dir,
         missing_tools=missing_tools,
         paseo_version=paseo_check.version,
         paseo_current_version=paseo_check.current_version,
         paseo_upgrade_hint=paseo_check.upgrade_hint,
     )
+
+
+def opencode_tool_path() -> Path:
+    return Path("~/.config/opencode/tools/lane.ts").expanduser()
+
+
+def compact_opencode_registration_note() -> str:
+    path = opencode_tool_path()
+    if path.is_file():
+        return f"opencode tool present: {path}"
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "register_opencode_tool.py"
+    )
+    return f"register opencode tool: python {script}"
 
 
 @dataclass(frozen=True)
@@ -106,6 +163,35 @@ def ensure_lane_ignored(target: Path) -> None:
         f"{existing}{prefix}{LANE_IGNORE_ENTRY}\n",
         encoding="utf-8",
     )
+
+
+def ensure_agent_instructions(target: Path) -> str:
+    path = target / "AGENTS.md"
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+
+    start = existing.find(AGENT_INSTRUCTIONS_HEADER)
+    end = existing.find(AGENT_INSTRUCTIONS_FOOTER)
+    if start != -1 and end != -1 and end > start:
+        end += len(AGENT_INSTRUCTIONS_FOOTER)
+        updated = existing[:start].rstrip() + "\n\n" + AGENT_INSTRUCTIONS
+        suffix = existing[end:].strip()
+        if suffix:
+            updated += "\n\n" + suffix
+        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+        return "replaced"
+
+    if existing.strip():
+        path.write_text(
+            existing.rstrip() + "\n\n" + AGENT_INSTRUCTIONS + "\n",
+            encoding="utf-8",
+        )
+        return "updated"
+
+    path.write_text(
+        "# Lane Agent Instructions\n\n" + AGENT_INSTRUCTIONS + "\n",
+        encoding="utf-8",
+    )
+    return "created"
 
 
 def install_lane_lite_schema(home: Path) -> Path:

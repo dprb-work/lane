@@ -55,7 +55,18 @@ The installer owns dependency installation. It installs system tools, installs
 Paseo and OpenSpec CLIs into a user-local npm prefix, installs npm dependencies,
 creates a repo-local `.venv`, and installs the editable Python package there.
 It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
-directory is on `PATH`. `lane init` is only repo bootstrap and validation.
+directory is on `PATH`. `lane init` is repo bootstrap and validation.
+
+Register the OpenCode custom tool definition from this checkout when you want
+OpenCode's typed `functions.lane` surface:
+
+```bash
+python scripts/register_opencode_tool.py
+```
+
+The registration script renders this checkout path into `opencode/tools/lane.ts`
+and recreates `~/.config/opencode/tools/lane.ts` every time. Restart OpenCode or
+reload its config after registration so the tool definition refreshes.
 
 Initialize repo support once:
 
@@ -63,11 +74,14 @@ Initialize repo support once:
 lane init
 ```
 
-`lane init` ensures `.lane/` is ignored, installs the lightweight OpenSpec schema
-if missing, reports missing tools, and prints Paseo version information. It
-errors when the installed Paseo CLI is below the minimum supported version and
-warns when a newer package is available online. It does not install or upgrade
-tools.
+`lane init` ensures `.lane/` is ignored, creates or updates the repo-local
+`AGENTS.md` with a managed Paseo-native workflow block, installs the lightweight
+OpenSpec schema if missing, reports missing tools, reports OpenCode tool
+registration status, and prints Paseo version information. When the managed
+`AGENTS.md` block already exists, `lane init` replaces it with the current
+instructions. It errors when the installed Paseo CLI is below the minimum
+supported version and warns when a newer package is available online. It does not
+install or upgrade tools.
 
 Start a new Paseo-backed lane:
 

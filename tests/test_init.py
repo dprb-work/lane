@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 
 from lane.init import (
+    AGENT_INSTRUCTIONS_HEADER,
     InitError,
     check_paseo_cli,
+    ensure_agent_instructions,
     ensure_lane_ignored,
     install_lane_lite_schema,
 )
@@ -35,6 +37,51 @@ def test_install_lane_lite_schema(tmp_path: Path) -> None:
     assert schema_dir == tmp_path / ".local/share/openspec/schemas/lane-lite"
     assert (schema_dir / "schema.yaml").exists()
     assert (schema_dir / "templates/lane.md").exists()
+
+
+def test_ensure_agent_instructions_creates_agents(tmp_path: Path) -> None:
+    action = ensure_agent_instructions(tmp_path)
+
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert action == "created"
+    assert text.startswith("# Lane Agent Instructions")
+    assert "Mandatory Lane Workflow" in text
+    assert "Paseo owns workspace and worktree creation" in text
+
+
+def test_ensure_agent_instructions_appends_to_existing_agents(tmp_path: Path) -> None:
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("# Existing\n\nKeep this.\n", encoding="utf-8")
+
+    action = ensure_agent_instructions(tmp_path)
+
+    text = agents.read_text(encoding="utf-8")
+    assert action == "updated"
+    assert text.startswith("# Existing\n\nKeep this.")
+    assert text.count(AGENT_INSTRUCTIONS_HEADER) == 1
+
+
+def test_ensure_agent_instructions_replaces_existing_managed_block(
+    tmp_path: Path,
+) -> None:
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text(
+        "# Existing\n\n"
+        "<!-- lane:instructions:start -->\n"
+        "old instructions\n"
+        "<!-- lane:instructions:end -->\n\n"
+        "After.\n",
+        encoding="utf-8",
+    )
+
+    action = ensure_agent_instructions(tmp_path)
+
+    text = agents.read_text(encoding="utf-8")
+    assert action == "replaced"
+    assert "old instructions" not in text
+    assert "Mandatory Lane Workflow" in text
+    assert "After." in text
+    assert text.count(AGENT_INSTRUCTIONS_HEADER) == 1
 
 
 def test_check_paseo_cli_reports_version(
