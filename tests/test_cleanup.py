@@ -159,6 +159,35 @@ def test_close_pr_calls_glab_for_self_hosted_gitlab_mr(
     ]
 
 
+def test_close_pr_preserves_self_hosted_gitlab_port(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.cleanup.shutil.which", lambda _: "/usr/bin/glab")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result("")
+
+    close_pr(
+        "https://git.example.test:8443/acme/app/-/merge_requests/123",
+        tmp_path,
+        runner=runner,
+    )
+
+    assert calls == [
+        [
+            "glab",
+            "mr",
+            "close",
+            "123",
+            "--repo",
+            "https://git.example.test:8443/acme/app",
+        ]
+    ]
+
+
 def test_delete_remote_branch_calls_git(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

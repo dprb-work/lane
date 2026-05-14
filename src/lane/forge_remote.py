@@ -95,8 +95,9 @@ def parse_gitlab_mr_url(mr_url: str) -> GitLabMergeRequest:
     iid = iid.strip("/")
     if not repo or not iid:
         raise ForgeRemoteError(f"cannot parse GitLab MR URL: {mr_url}")
+    authority = parsed.netloc.rsplit("@", maxsplit=1)[-1]
     return GitLabMergeRequest(
-        repo_selector=f"{parsed.scheme}://{parsed.hostname}/{repo}",
+        repo_selector=f"{parsed.scheme}://{authority}/{repo}",
         iid=iid,
     )
 
