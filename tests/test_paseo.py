@@ -84,12 +84,41 @@ def test_list_worktrees_parses_paseo_json(monkeypatch: pytest.MonkeyPatch) -> No
 
     def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
         assert argv == ["paseo", "worktree", "ls", "--json"]
-        assert cwd is None
+        assert cwd == Path("/repo")
         return _result(
             '[{"name":"login","branch":"fix/login","cwd":"/tmp/login","agent":"-"}]'
         )
 
-    assert list_worktrees(runner=runner) == [
+    assert list_worktrees(cwd=Path("/repo"), runner=runner) == [
+        PaseoWorktree(name="login", branch="fix/login", path=Path("/tmp/login"))
+    ]
+
+
+def test_list_worktrees_falls_back_to_daemon_client_for_paseo_cli_cwd_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.paseo.shutil.which", lambda _: "/usr/bin/tool")
+    monkeypatch.setattr(
+        "lane.paseo._paseo_client_module_path",
+        lambda: Path("/opt/paseo/dist/utils/client.js"),
+    )
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        if argv[:4] == ["paseo", "worktree", "ls", "--json"]:
+            return _result(
+                "",
+                returncode=1,
+                stderr="cwd or repoRoot is required",
+            )
+        assert argv[:3] == ["node", "--input-type=module", "-e"]
+        assert argv[3].startswith("\nimport { connectToDaemon }")
+        assert argv[4] == "/repo"
+        assert cwd == Path("/repo")
+        return _result(
+            '{"worktrees":[{"worktreePath":"/tmp/login","branchName":"fix/login"}],"error":null}'
+        )
+
+    assert list_worktrees(cwd=Path("/repo"), runner=runner) == [
         PaseoWorktree(name="login", branch="fix/login", path=Path("/tmp/login"))
     ]
 
