@@ -63,6 +63,31 @@ def create_worktree(
     return _worktree_from_create(raw)
 
 
+def checkout_branch_worktree(
+    branch: str,
+    *,
+    cwd: Path,
+    runner: Runner | None = None,
+) -> PaseoWorktree:
+    raw = _run_json(
+        [
+            "paseo",
+            "worktree",
+            "create",
+            "--mode",
+            "checkout-branch",
+            "--branch",
+            branch,
+            "--cwd",
+            str(cwd),
+            "--json",
+        ],
+        cwd=cwd,
+        runner=_run if runner is None else runner,
+    )
+    return _worktree_from_create(raw)
+
+
 def rename_current_branch(
     branch: str,
     *,

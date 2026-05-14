@@ -68,18 +68,18 @@ Out of scope:
 
 ## Tasks
 
-- [ ] Define the shared lane-target resolution model for branches, PR/MR
+- [x] Define the shared lane-target resolution model for branches, PR/MR
   numbers, and PR/MR URLs.
-- [ ] Implement the lane-target model as one shared module used by all commands
+- [x] Implement the lane-target model as one shared module used by all commands
   that accept lane selectors.
-- [ ] Add provider metadata lookup for PR/MR source branch, base branch, URL, and
+- [x] Add provider metadata lookup for PR/MR source branch, base branch, URL, and
   remote branch existence.
-- [ ] Add a Paseo wrapper for creating or attaching a workspace from an existing
+- [x] Add a Paseo wrapper for creating or attaching a workspace from an existing
   branch.
-- [ ] Create lane state and the required OpenSpec spec record when materializing
+- [x] Create lane state and the required OpenSpec spec record when materializing
   a remote lane target.
-- [ ] Make command handlers use materialized lanes only after local selector
+- [x] Make command handlers use materialized lanes only after local selector
   resolution fails.
-- [ ] Add tests for local lane preference, PR number resolution, remote branch
+- [x] Add tests for local lane preference, PR number resolution, remote branch
   materialization, missing remote failure, and ambiguous selector failure.
-- [ ] Document the review selector materialization behavior.
+- [x] Document the shared selector materialization behavior.

@@ -94,6 +94,14 @@ def _resolve_provider_lane_target(
     runner: Runner,
 ) -> LaneTarget:
     parsed = urlparse(selector)
+    if parsed.hostname is None:
+        try:
+            provider = infer_forge_remote(cwd, runner=runner).provider
+        except ForgeRemoteError:
+            provider = "github"
+        if provider == "gitlab":
+            return _resolve_gitlab_mr(selector, cwd, runner)
+        return _resolve_github_pr(selector, cwd, runner)
     if parsed.hostname == "gitlab.com" or "merge_requests" in parsed.path:
         return _resolve_gitlab_mr(selector, cwd, runner)
     return _resolve_github_pr(selector, cwd, runner)

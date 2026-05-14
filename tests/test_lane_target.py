@@ -41,6 +41,7 @@ def test_resolve_lane_target_resolves_github_pr_number() -> None:
     assert target.base == "main"
     assert target.pr_url == "https://github.com/acme/app/pull/3"
     assert calls == [
+        ["git", "remote", "-v"],
         ["gh", "pr", "view", "#3", "--json", "headRefName,baseRefName,url"]
     ]
 
@@ -64,6 +65,27 @@ def test_resolve_lane_target_resolves_gitlab_mr_url() -> None:
     assert target.branch == "fix/login"
     assert target.base == "main"
     assert target.pr_url == "https://gitlab.com/acme/app/-/merge_requests/3"
+
+
+def test_resolve_lane_target_infers_numeric_gitlab_mr_from_remote() -> None:
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("origin\thttps://gitlab.com/acme/app.git (fetch)\n")
+        assert argv == ["glab", "mr", "view", "3", "--output", "json"]
+        return _result(
+            '{"source_branch":"fix/login","target_branch":"main",'
+            '"web_url":"https://gitlab.com/acme/app/-/merge_requests/3"}'
+        )
+
+    target = resolve_lane_target("#3", [], cwd=Path("/repo"), runner=runner)
+
+    assert target.branch == "fix/login"
+    assert target.base == "main"
+    assert target.pr_url == "https://gitlab.com/acme/app/-/merge_requests/3"
+    assert ["glab", "mr", "view", "3", "--output", "json"] in calls
 
 
 def test_resolve_lane_target_accepts_existing_remote_branch() -> None:

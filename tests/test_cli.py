@@ -316,6 +316,51 @@ def test_status_resolves_pr_selector_from_known_lanes(
     assert cli.main(["status", "#123"]) == 0
 
 
+def test_status_materializes_remote_lane_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    spec_calls: list[tuple[str, str, str, Path]] = []
+
+    def fake_create_spec(
+        name: str,
+        *,
+        schema: str,
+        description: str,
+        cwd: Path,
+    ) -> None:
+        spec_calls.append((name, schema, description, cwd))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_worktrees", lambda **_: [])
+    monkeypatch.setattr(
+        cli,
+        "checkout_branch_worktree",
+        lambda branch, *, cwd: PaseoWorktree(
+            name="login", branch=branch, path=workspace
+        ),
+    )
+    monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="release",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["status", "#123"]) == 0
+    state = read_state(workspace)
+    assert state.branch == "fix/login"
+    assert state.base == "release"
+    assert state.pr == "https://github.com/acme/app/pull/123"
+    assert spec_calls == [("login", "lane-lite", "Lane for fix/login", workspace)]
+
+
 def test_list_prints_known_lanes(
     tmp_path: Path,
     monkeypatch,
