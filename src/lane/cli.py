@@ -388,10 +388,11 @@ def _materialize_lane_target(target: LaneTarget) -> LaneState:
     worktree = checkout_branch_worktree(branch.branch, cwd=Path.cwd())
     state = _new_lane_state(
         branch=branch.branch,
-        lane_id=branch.slug,
+        lane_id=worktree.name,
         base=target.base,
         path=worktree.path,
         pr=target.pr_url,
+        spec=branch.slug,
     )
     write_state(worktree.path, state)
     return state
@@ -404,6 +405,7 @@ def _new_lane_state(
     base: str,
     path: Path,
     pr: str | None,
+    spec: str | None = None,
 ) -> LaneState:
     return LaneState(
         schema=STATE_SCHEMA,
@@ -412,7 +414,7 @@ def _new_lane_state(
         branch=branch,
         base=base,
         path=path,
-        spec=lane_id,
+        spec=lane_id if spec is None else spec,
         review="none",
         pr=pr,
     )

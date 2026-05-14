@@ -47,6 +47,8 @@ Out of scope:
   do not call `git worktree add` directly.
 - Materialized lanes get normal `.lane/state.yaml` state and preserve the
   branch's existing OpenSpec state, whether active or archived.
+- Materialized lane state stores the Paseo worktree name as `id` for later
+  archive operations and keeps `spec` tied to the branch slug.
 - Ambiguous local or provider selector matches fail before materialization.
 
 ## Design Notes
