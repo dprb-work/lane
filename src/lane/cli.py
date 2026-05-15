@@ -24,6 +24,7 @@ from lane.init import (
 from lane.lane_target import LaneTarget, LaneTargetError, resolve_lane_target
 from lane.openspec import (
     OpenSpecError,
+    active_spec_path,
     create_spec,
     require_spec_archived,
 )
@@ -40,7 +41,14 @@ from lane.resolve import (
     resolve_filesystem_path,
 )
 from lane.review import ReviewError, run_review
-from lane.state import STATE_SCHEMA, LaneState, read_state, state_to_dict, write_state
+from lane.state import (
+    STATE_SCHEMA,
+    LaneState,
+    find_state_path,
+    read_state,
+    state_to_dict,
+    write_state,
+)
 from lane.verify import VerifyError, run_verify
 
 
@@ -70,9 +78,17 @@ def build_parser() -> argparse.ArgumentParser:
     list_command = subparsers.add_parser("list", help="List known lanes.")
     list_command.set_defaults(handler=handle_list)
 
-    pending_commands = [
+    attach = subparsers.add_parser(
         "attach",
-    ]
+        help="Attach an existing Paseo workspace to lane state.",
+    )
+    attach.add_argument(
+        "selector",
+        nargs="?",
+        help="Paseo workspace selector; omitted means current directory.",
+    )
+    attach.set_defaults(handler=handle_attach)
+
     init = subparsers.add_parser("init", help="Initialize lane support.")
     init.add_argument(
         "path",
@@ -151,10 +167,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Paseo provider mode/review agent name for the final judge phase.",
     )
     review.set_defaults(handler=handle_review)
-
-    for name in pending_commands:
-        command = subparsers.add_parser(name, help=f"{name} is not implemented yet.")
-        command.set_defaults(handler=handle_not_implemented)
 
     return parser
 
@@ -239,6 +251,12 @@ def handle_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_attach(args: argparse.Namespace) -> int:
+    state = _attach_lane(args.selector)
+    _print_state(state)
+    return 0
+
+
 def handle_cleanup(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
@@ -307,11 +325,6 @@ def handle_review(args: argparse.Namespace) -> int:
         suffix = "" if run.paseo_agent_id is None else f" ({run.paseo_agent_id})"
         print(f"{run.agent}: {run.exit_status}{suffix}")
     return 0 if result.review in {"approve", "comment", "none"} else 1
-
-
-def handle_not_implemented(args: argparse.Namespace) -> int:
-    print(f"lane {args.command} is not implemented yet", file=sys.stderr)
-    return 2
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -396,6 +409,106 @@ def _materialize_lane_target(target: LaneTarget) -> LaneState:
     )
     write_state(worktree.path, state)
     return state
+
+
+def _attach_lane(selector: str | None) -> LaneState:
+    worktree, target = _resolve_attach_worktree(selector)
+    existing_state_path = find_state_path(worktree.path)
+    if existing_state_path is not None:
+        return read_state(existing_state_path.parent.parent)
+
+    branch = parse_branch(worktree.branch)
+    state = _new_lane_state(
+        branch=branch.branch,
+        lane_id=worktree.name,
+        base="main" if target is None else target.base,
+        path=worktree.path,
+        pr=None if target is None else target.pr_url,
+        spec=branch.slug,
+    )
+    if not _spec_record_exists(worktree.path, branch.slug):
+        create_spec(
+            branch.slug,
+            schema=branch.spec_schema,
+            description=f"Lane for {branch.branch}",
+            cwd=worktree.path,
+        )
+    write_state(worktree.path, state)
+    return state
+
+
+def _resolve_attach_worktree(selector: str | None):
+    worktrees = list_worktrees(cwd=Path.cwd())
+    if selector is None:
+        cwd = Path.cwd().resolve()
+        matches = [
+            worktree
+            for worktree in worktrees
+            if cwd == worktree.path.resolve() or worktree.path.resolve() in cwd.parents
+        ]
+        return _single_worktree_match(matches, "."), None
+
+    candidate = Path(selector).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    if candidate.exists():
+        selected_path = candidate.resolve()
+        matches = [
+            worktree
+            for worktree in worktrees
+            if selected_path == worktree.path.resolve()
+            or worktree.path.resolve() in selected_path.parents
+        ]
+        return _single_worktree_match(matches, selector), None
+
+    local = _resolve_attach_local_selector(selector, worktrees)
+    if local is not None:
+        return local, None
+
+    target = resolve_lane_target(selector, _known_lane_states(), cwd=Path.cwd())
+    matches = [worktree for worktree in worktrees if worktree.branch == target.branch]
+    return _single_worktree_match(matches, selector), target
+
+
+def _resolve_attach_local_selector(selector: str, worktrees: list):
+    if "/" in selector:
+        matches = [worktree for worktree in worktrees if worktree.branch == selector]
+    else:
+        matches = [
+            worktree
+            for worktree in worktrees
+            if worktree.name == selector
+            or worktree.branch.rsplit("/", maxsplit=1)[-1] == selector
+        ]
+    try:
+        return _single_worktree_match(matches, selector)
+    except ValueError as error:
+        if "ambiguous Paseo workspace selector" in str(error):
+            raise
+        return None
+
+
+def _single_worktree_match(matches: list, selector: str):
+    if not matches:
+        raise ValueError(f"no Paseo workspace matches {selector!r}")
+    if len(matches) > 1:
+        candidates = ", ".join(sorted(worktree.branch for worktree in matches))
+        raise ValueError(
+            f"ambiguous Paseo workspace selector {selector!r}; candidates: {candidates}"
+        )
+    return matches[0]
+
+
+def _spec_record_exists(workspace: Path, spec: str) -> bool:
+    if active_spec_path(workspace, spec).exists():
+        return True
+    archive_dir = workspace / "openspec" / "changes" / "archive"
+    if not archive_dir.exists():
+        return False
+    return any(
+        path.is_dir() and (path.name == spec or path.name.endswith(f"-{spec}"))
+        for path in archive_dir.iterdir()
+    )
 
 
 def _new_lane_state(

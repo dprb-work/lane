@@ -93,6 +93,19 @@ lane start feat/workspace-status --base main
 creates the required OpenSpec change with the schema inferred from the branch
 prefix.
 
+Attach an existing Paseo workspace to lane state:
+
+```bash
+lane attach [selector]
+```
+
+`lane attach` is for workspaces created outside `lane`, such as through Paseo UI
+or another Paseo entry point. The selector can be omitted to attach the current
+Paseo workspace, or it can name a workspace path, Paseo worktree name, branch,
+slug, or PR/MR selector. Attach writes `.lane/state.yaml`, creates the required
+OpenSpec change when no active or archived record already exists, and is
+idempotent when lane state is already present.
+
 Work from inside the Paseo workspace, then use:
 
 ```bash
