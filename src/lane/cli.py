@@ -41,6 +41,7 @@ from lane.resolve import (
     resolve_filesystem_path,
 )
 from lane.review import ReviewError, run_review
+from lane.run import RunError, run_lane_command
 from lane.state import (
     STATE_SCHEMA,
     LaneState,
@@ -186,6 +187,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verify.set_defaults(handler=handle_verify)
 
+    run = subparsers.add_parser("run", help="Run a command in a lane workspace.")
+    run.add_argument(
+        "run_args",
+        nargs=argparse.REMAINDER,
+        help="Optional lane selector followed by -- and command argv.",
+    )
+    run.set_defaults(handler=handle_run)
+
     review = subparsers.add_parser("review", help="Run lane review perspectives.")
     review.add_argument(
         "selector",
@@ -260,6 +269,7 @@ def handle_init(args: argparse.Namespace) -> int:
     result = run_init(Path(args.path))
     print(f"ignored state: {result.gitignore}")
     print(f"agent instructions {result.agents_action}: {result.agents}")
+    print(f"paseo config {result.paseo_config_action}: {result.paseo_config}")
     print(f"lane-lite schema: {result.schema_dir}")
     print(compact_opencode_registration_note())
     print(compact_tool_requirement_note())
@@ -359,6 +369,33 @@ def handle_verify(args: argparse.Namespace) -> int:
     return result.exit_status
 
 
+def handle_run(args: argparse.Namespace) -> int:
+    selector, argv = _parse_run_args(args.run_args)
+    state = _resolve_lane(selector)
+    result = run_lane_command(state.path, argv, capture_output=False)
+    return result.exit_status
+
+
+def _parse_run_args(args: list[str]) -> tuple[str | None, list[str]]:
+    if not args:
+        raise RunError("missing command after `--`")
+    if args[0] == "--":
+        argv = args[1:]
+        if not argv:
+            raise RunError("missing command after `--`")
+        return None, argv
+    try:
+        separator = args.index("--")
+    except ValueError as error:
+        raise RunError("missing `--` before command") from error
+    if separator != 1:
+        raise RunError("lane run accepts at most one selector before `--`")
+    argv = args[separator + 1 :]
+    if not argv:
+        raise RunError("missing command after `--`")
+    return args[0], argv
+
+
 def _publication_verification(
     state: LaneState,
     *,
@@ -412,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
         OpenSpecError,
         PaseoError,
         ReviewError,
+        RunError,
         ValueError,
         VerifyError,
     ) as error:

@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from lane.run import Runner as CommandRunner
+from lane.run import run_lane_command
 from lane.state import VerificationState
 
 
@@ -28,7 +30,7 @@ class VerifyResult:
     summary: str
 
 
-class Runner(Protocol):
+class GitRunner(Protocol):
     def __call__(
         self,
         argv: list[str],
@@ -48,7 +50,11 @@ def discover_verify_command(workspace: Path) -> VerifyCommand:
     raise VerifyError("no verify command found; add `just verify` or `npm run verify`")
 
 
-def run_verify(workspace: Path, *, runner: Runner | None = None) -> VerifyResult:
+def run_verify(
+    workspace: Path,
+    *,
+    runner: CommandRunner | None = None,
+) -> VerifyResult:
     command = discover_verify_command(workspace)
     executable = command.argv[0]
     if shutil.which(executable) is None:
@@ -56,16 +62,20 @@ def run_verify(workspace: Path, *, runner: Runner | None = None) -> VerifyResult
             f"required verifier executable not found on PATH: {executable}"
         )
 
-    runner = _run if runner is None else runner
-    result = runner(command.argv, workspace)
+    result = run_lane_command(
+        workspace,
+        command.argv,
+        capture_output=True,
+        runner=runner,
+    )
     return VerifyResult(
         command=command,
-        exit_status=result.returncode,
+        exit_status=result.exit_status,
         summary=_summarize_output(result.stdout, result.stderr),
     )
 
 
-def current_head(workspace: Path, *, runner: Runner | None = None) -> str:
+def current_head(workspace: Path, *, runner: GitRunner | None = None) -> str:
     runner = _run if runner is None else runner
     result = runner(["git", "rev-parse", "HEAD"], workspace)
     if result.returncode != 0:

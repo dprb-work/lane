@@ -6,6 +6,7 @@ from lane import cli
 from lane.forge import ForgeResult
 from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
+from lane.run import LaneCommandResult
 from lane.state import LaneState, VerificationState, read_state, write_state
 from lane.verify import VerifyCommand, VerifyResult
 
@@ -905,6 +906,37 @@ def test_verify_does_not_record_failed_freshness(
     assert cli.main(["verify"]) == 1
 
     assert read_state(tmp_path).verification is None
+
+
+def test_run_executes_command_in_resolved_lane(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+    calls: list[tuple[Path, list[str], bool]] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_lane_command",
+        lambda workspace, argv, *, capture_output: calls.append(
+            (workspace, argv, capture_output)
+        )
+        or LaneCommandResult(argv=argv, exit_status=3, stdout="", stderr=""),
+    )
+
+    assert cli.main(["run", "--", "python", "-m", "pytest"]) == 3
+
+    assert calls == [(tmp_path, ["python", "-m", "pytest"], False)]
+
+
+def test_run_requires_command_after_separator(tmp_path: Path, monkeypatch) -> None:
+    write_state(tmp_path, _state(tmp_path, branch="fix/login"))
+
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["run", "--"]) == 2
 
 
 def test_push_runs_verification_before_pushing(

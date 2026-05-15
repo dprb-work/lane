@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from lane.init import (
     compact_tool_requirement_note,
     ensure_agent_instructions,
     ensure_lane_ignored,
+    ensure_paseo_shared_venv_setup,
     install_lane_lite_schema,
     run_init,
 )
@@ -57,6 +59,45 @@ def test_run_init_reports_optional_command_tools(
     result = run_init(tmp_path, home=tmp_path)
 
     assert result.missing_tools == ("openspec", "gh", "glab", "just")
+    assert result.paseo_config == tmp_path / "paseo.json"
+
+
+def test_ensure_paseo_shared_venv_setup_creates_config(tmp_path: Path) -> None:
+    action = ensure_paseo_shared_venv_setup(tmp_path)
+
+    raw = json.loads((tmp_path / "paseo.json").read_text(encoding="utf-8"))
+    assert action == "created"
+    assert raw["worktree"]["setup"][0].startswith("# lane:shared-venv")
+
+
+def test_ensure_paseo_shared_venv_setup_appends_once(tmp_path: Path) -> None:
+    path = tmp_path / "paseo.json"
+    path.write_text(
+        json.dumps(
+            {
+                "worktree": {"setup": "npm ci"},
+                "scripts": {"test": {"command": "npm test"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert ensure_paseo_shared_venv_setup(tmp_path) == "updated"
+    assert ensure_paseo_shared_venv_setup(tmp_path) == "unchanged"
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["worktree"]["setup"][0] == "npm ci"
+    assert raw["worktree"]["setup"][1].startswith("# lane:shared-venv")
+    assert raw["scripts"] == {"test": {"command": "npm test"}}
+
+
+def test_ensure_paseo_shared_venv_setup_rejects_invalid_config(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "paseo.json").write_text("[]", encoding="utf-8")
+
+    with pytest.raises(InitError, match="root must be an object"):
+        ensure_paseo_shared_venv_setup(tmp_path)
 
 
 def test_compact_tool_requirement_note_explains_provider_specific_clis() -> None:

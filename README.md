@@ -80,7 +80,8 @@ lane init
 ```
 
 `lane init` ensures `.lane/` is ignored, creates or updates the repo-local
-`AGENTS.md` with a managed Paseo-native workflow block, installs the lightweight
+`AGENTS.md` with a managed Paseo-native workflow block, creates or updates
+`paseo.json` with the managed shared-venv setup command, installs the lightweight
 OpenSpec schema if missing, reports missing tools, reports OpenCode tool
 registration status, and prints Paseo version information. When the managed
 `AGENTS.md` block already exists, `lane init` replaces it with the current
@@ -117,6 +118,7 @@ Work from inside the Paseo workspace, then use:
 lane status
 lane list
 lane verify
+lane run -- python -m pytest
 lane push
 lane review
 lane finalize
@@ -127,6 +129,25 @@ lane cleanup
 runs `npm run verify` when `package.json` has a `verify` script. Verification
 reports the command, exit status, and a concise output summary. Successful
 verification records freshness in `.lane/state.yaml` for the current `HEAD`.
+When the lane workspace has `.venv/bin`, verification runs with
+`VIRTUAL_ENV=<workspace>/.venv`, `.venv/bin` prepended to `PATH`, and `PYTHONHOME`
+removed.
+
+`lane run [selector] -- <command...>` runs an arbitrary command in the resolved
+lane workspace with the same shared-venv activation as `lane verify`:
+
+```bash
+lane run -- python -m pytest
+lane run fix/login -- ruff check .
+```
+
+The command after `--` is passed as argv without shell interpolation. Output
+streams directly and `lane run` exits with the command's exit status.
+
+The managed `paseo.json` setup command installed by `lane init` links each new
+Paseo worktree's `.venv` to the source checkout `.venv` when it exists. It warns
+without failing when the source `.venv` is missing, and it refuses to overwrite a
+real worktree `.venv` directory.
 
 `lane list` shows known lane state discovered from Paseo-listed worktrees. It
 prints an aligned table with lane id, status, branch, review, PR, and path.
