@@ -4,8 +4,11 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
+
+from lane.state import VerificationState
 
 
 class VerifyError(RuntimeError):
@@ -60,6 +63,52 @@ def run_verify(workspace: Path, *, runner: Runner | None = None) -> VerifyResult
         exit_status=result.returncode,
         summary=_summarize_output(result.stdout, result.stderr),
     )
+
+
+def current_head(workspace: Path, *, runner: Runner | None = None) -> str:
+    runner = _run if runner is None else runner
+    result = runner(["git", "rev-parse", "HEAD"], workspace)
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "command failed"
+        raise VerifyError(f"git rev-parse HEAD failed: {message}")
+    head = result.stdout.strip()
+    if head == "":
+        raise VerifyError("git rev-parse HEAD returned no commit")
+    return head
+
+
+def verification_state(result: VerifyResult, head: str) -> VerificationState:
+    return VerificationState(
+        command=result.command.label,
+        exit_status=result.exit_status,
+        head=head,
+        verified_at=datetime.now(UTC).isoformat(),
+    )
+
+
+def verify_result_from_state(state: VerificationState) -> VerifyResult:
+    return VerifyResult(
+        command=VerifyCommand(argv=[], label=state.command),
+        exit_status=state.exit_status,
+        summary=f"fresh verification recorded at {state.verified_at}",
+    )
+
+
+def require_fresh_verification(
+    verification: VerificationState | None,
+    head: str,
+) -> VerificationState:
+    if verification is None:
+        raise VerifyError(
+            "no fresh verification recorded; run `lane verify` or omit `--no-verify`"
+        )
+    if verification.exit_status != 0:
+        raise VerifyError("last verification did not succeed; run `lane verify`")
+    if verification.head != head:
+        raise VerifyError(
+            "last verification does not apply to current HEAD; run `lane verify`"
+        )
+    return verification
 
 
 def _justfile_has_verify(workspace: Path) -> bool:

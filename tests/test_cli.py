@@ -6,7 +6,7 @@ from lane import cli
 from lane.forge import ForgeResult
 from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
-from lane.state import LaneState, read_state, write_state
+from lane.state import LaneState, VerificationState, read_state, write_state
 from lane.verify import VerifyCommand, VerifyResult
 
 
@@ -623,6 +623,12 @@ def test_finalize_materialized_remote_lane_does_not_recreate_archived_spec(
             summary="ok",
         ),
     )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: "acme/app",
+    )
     monkeypatch.setattr(
         cli,
         "finalize_pr",
@@ -828,6 +834,12 @@ def test_finalize_updates_state_with_pr_url(
             summary="ok",
         ),
     )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: "acme/app",
+    )
     monkeypatch.setattr(
         cli,
         "finalize_pr",
@@ -841,9 +853,156 @@ def test_finalize_updates_state_with_pr_url(
     updated = read_state(tmp_path)
     assert updated.status == "finalized"
     assert updated.pr == "https://github.com/acme/app/pull/123"
+    assert updated.verification is not None
+    assert updated.verification.head == "abc123"
 
 
-def _state(path: Path, *, branch: str, pr: str | None = None) -> LaneState:
+def test_verify_records_successful_freshness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=0,
+            summary="ok",
+        ),
+    )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+
+    assert cli.main(["verify"]) == 0
+
+    updated = read_state(tmp_path)
+    assert updated.verification is not None
+    assert updated.verification.command == "just verify"
+    assert updated.verification.head == "abc123"
+
+
+def test_verify_does_not_record_failed_freshness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=1,
+            summary="failed",
+        ),
+    )
+
+    assert cli.main(["verify"]) == 1
+
+    assert read_state(tmp_path).verification is None
+
+
+def test_push_runs_verification_before_pushing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+    pushed: list[tuple[str, bool]] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=0,
+            summary="ok",
+        ),
+    )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: pushed.append(
+            (state.branch, force_with_lease)
+        )
+        or "acme/app",
+    )
+
+    assert cli.main(["push"]) == 0
+
+    assert pushed == [("fix/login", False)]
+    assert read_state(tmp_path).verification is not None
+
+
+def test_push_no_verify_requires_fresh_verification(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+    pushed: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: pushed.append(state.branch)
+        or "acme/app",
+    )
+
+    assert cli.main(["push", "--no-verify"]) == 2
+
+    assert pushed == []
+
+
+def test_push_no_verify_reuses_fresh_verification_with_force_with_lease(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        verification=VerificationState(
+            command="just verify",
+            exit_status=0,
+            head="abc123",
+            verified_at="2026-05-15T00:00:00+00:00",
+        ),
+    )
+    write_state(tmp_path, state)
+    pushed: list[tuple[str, bool]] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: pushed.append(
+            (state.branch, force_with_lease)
+        )
+        or "acme/app",
+    )
+
+    assert cli.main(["push", "--no-verify", "--force-with-lease"]) == 0
+
+    assert pushed == [("fix/login", True)]
+
+
+def _state(
+    path: Path,
+    *,
+    branch: str,
+    pr: str | None = None,
+    verification: VerificationState | None = None,
+) -> LaneState:
     lane_id = branch.split("/", maxsplit=1)[1]
     return LaneState(
         schema=1,
@@ -855,4 +1014,5 @@ def _state(path: Path, *, branch: str, pr: str | None = None) -> LaneState:
         spec=lane_id,
         review="none",
         pr=pr,
+        verification=verification,
     )

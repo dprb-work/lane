@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lane.forge import ForgeError, finalize_pr, infer_github_repo, pr_body
+from lane.forge import ForgeError, finalize_pr, infer_github_repo, pr_body, push_branch
 from lane.forge_remote import infer_forge_remote, parse_forge_remote_url
 from lane.state import LaneState
 from lane.verify import VerifyCommand, VerifyResult
@@ -68,7 +68,7 @@ def test_parse_forge_remote_url_detects_self_hosted_gitlab_remote() -> None:
     )
 
 
-def test_finalize_pr_pushes_and_creates_pr(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_finalize_pr_creates_pr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
     calls: list[list[str]] = []
 
@@ -85,7 +85,6 @@ def test_finalize_pr_pushes_and_creates_pr(monkeypatch: pytest.MonkeyPatch) -> N
     result = finalize_pr(_state(), _verification(), runner=runner)
 
     assert result.pr_url == "https://github.com/acme/app/pull/123"
-    assert ["git", "push", "-u", "upstream", "fix/login"] in calls
     assert any(call[:3] == ["gh", "pr", "create"] for call in calls)
 
 
@@ -124,8 +123,45 @@ def test_finalize_pr_creates_gitlab_mr(monkeypatch: pytest.MonkeyPatch) -> None:
     result = finalize_pr(_state(), _verification(), runner=runner)
 
     assert result.pr_url == "https://gitlab.com/acme/app/-/merge_requests/123"
-    assert ["git", "push", "-u", "origin", "fix/login"] in calls
     assert any(call[:3] == ["glab", "mr", "create"] for call in calls)
+
+
+def test_push_branch_pushes_to_inferred_remote(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
+        return _result("")
+
+    repo = push_branch(_state(), runner=runner)
+
+    assert repo == "acme/app"
+    assert ["git", "push", "-u", "upstream", "fix/login"] in calls
+
+
+def test_push_branch_supports_force_with_lease(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
+        return _result("")
+
+    push_branch(_state(), force_with_lease=True, runner=runner)
+
+    assert [
+        "git",
+        "push",
+        "--force-with-lease",
+        "-u",
+        "upstream",
+        "fix/login",
+    ] in calls
 
 
 def test_finalize_pr_updates_existing_gitlab_mr(
