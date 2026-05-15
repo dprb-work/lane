@@ -8,6 +8,7 @@ from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
 from lane.run import LaneCommandResult
 from lane.state import LaneState, VerificationState, read_state, write_state
+from lane.status import StatusHealth
 from lane.verify import VerifyCommand, VerifyResult
 
 
@@ -454,6 +455,38 @@ def test_status_resolves_exact_branch_from_known_lanes(
     )
 
     assert cli.main(["status", "fix/login"]) == 0
+
+
+def test_status_prints_health_fields(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(workspace, branch="fix/login")
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "collect_status_health",
+        lambda state: StatusHealth(
+            worktree="clean",
+            head="abc123",
+            upstream="upstream/fix/login",
+            verification="missing",
+            spec="active",
+            pr="none",
+        ),
+    )
+
+    assert cli.main(["status", str(workspace)]) == 0
+
+    output = capsys.readouterr().out
+    assert "health.worktree: clean" in output
+    assert "health.head: abc123" in output
+    assert "health.upstream: upstream/fix/login" in output
+    assert "health.verification: missing" in output
+    assert "health.spec: active" in output
+    assert "health.pr: none" in output
 
 
 def test_status_resolves_slug_from_known_lanes(

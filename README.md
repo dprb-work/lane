@@ -125,6 +125,12 @@ lane finalize
 lane cleanup
 ```
 
+`lane status` prints stored lane state followed by read-only health facts:
+worktree cleanliness, current `HEAD`, upstream branch, verification freshness,
+active vs archived spec state, and PR/MR state when a PR URL is known. These
+facts are intentionally not written back to `.lane/state.yaml`; future sync
+commands can use the same reality checks when state mutation is needed.
+
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `npm run verify` when `package.json` has a `verify` script. Verification
 reports the command, exit status, and a concise output summary. Successful

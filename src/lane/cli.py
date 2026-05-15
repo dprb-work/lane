@@ -50,6 +50,7 @@ from lane.state import (
     state_to_dict,
     write_state,
 )
+from lane.status import collect_status_health
 from lane.verify import (
     VerifyError,
     VerifyResult,
@@ -288,6 +289,7 @@ def handle_init(args: argparse.Namespace) -> int:
 def handle_status(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     _print_state(state)
+    _print_status_health(state)
     return 0
 
 
@@ -460,6 +462,16 @@ def main(argv: list[str] | None = None) -> int:
 def _print_state(state: LaneState) -> None:
     for key, value in state_to_dict(state).items():
         print(f"{key}: {value}")
+
+
+def _print_status_health(state: LaneState) -> None:
+    health = collect_status_health(state)
+    print(f"health.worktree: {health.worktree}")
+    print(f"health.head: {health.head}")
+    print(f"health.upstream: {health.upstream}")
+    print(f"health.verification: {health.verification}")
+    print(f"health.spec: {health.spec}")
+    print(f"health.pr: {health.pr}")
 
 
 def _print_lane_table(lanes: list[LaneState]) -> None:
