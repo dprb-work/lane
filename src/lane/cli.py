@@ -438,8 +438,8 @@ def _attach_lane(selector: str | None) -> LaneState:
 
 
 def _resolve_attach_worktree(selector: str | None):
-    worktrees = list_worktrees(cwd=Path.cwd())
     if selector is None:
+        worktrees = list_worktrees(cwd=Path.cwd())
         cwd = Path.cwd().resolve()
         matches = [
             worktree
@@ -453,6 +453,7 @@ def _resolve_attach_worktree(selector: str | None):
         candidate = Path.cwd() / candidate
     if candidate.exists():
         selected_path = candidate.resolve()
+        worktrees = list_worktrees(cwd=selected_path)
         matches = [
             worktree
             for worktree in worktrees
@@ -461,6 +462,7 @@ def _resolve_attach_worktree(selector: str | None):
         ]
         return _single_worktree_match(matches, selector), None
 
+    worktrees = list_worktrees(cwd=Path.cwd())
     local = _resolve_attach_local_selector(selector, worktrees)
     if local is not None:
         return local, None

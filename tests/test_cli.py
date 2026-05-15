@@ -241,6 +241,35 @@ def test_attach_existing_state_is_idempotent(
     assert spec_calls == []
 
 
+def test_attach_path_selector_lists_from_selected_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    outside = tmp_path / "outside"
+    workspace = tmp_path / "workspace"
+    outside.mkdir()
+    workspace.mkdir()
+
+    def fake_list_worktrees(*, cwd: Path):
+        if cwd != workspace:
+            raise cli.PaseoError(f"unexpected cwd: {cwd}")
+        return [PaseoWorktree(name="login", branch="fix/login", path=workspace)]
+
+    monkeypatch.chdir(outside)
+    monkeypatch.setattr(cli, "list_worktrees", fake_list_worktrees)
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: None,
+    )
+
+    assert cli.main(["attach", str(workspace)]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login"
+    assert state.branch == "fix/login"
+
+
 def test_attach_branch_selector_preserves_existing_active_spec(
     tmp_path: Path,
     monkeypatch,
