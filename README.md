@@ -121,6 +121,7 @@ lane verify
 lane run -- python -m pytest
 lane push
 lane review
+lane sync
 lane finalize
 lane cleanup
 ```
@@ -130,6 +131,14 @@ worktree cleanliness, current `HEAD`, upstream branch, verification freshness,
 active vs archived spec state, and PR/MR state when a PR URL is known. These
 facts are intentionally not written back to `.lane/state.yaml`; future sync
 commands can use the same reality checks when state mutation is needed.
+
+`lane sync [selector]` refreshes stored lane state from external reality without
+publishing, reviewing, finalizing, or cleaning up. It discovers an existing
+PR/MR URL for the lane branch when state does not already have one, marks the
+lane `merged` when the recorded or discovered PR/MR is merged, and clears stale
+verification freshness when the current `HEAD` no longer matches the recorded
+verification. It prints the refreshed state plus a compact list of changes and
+warnings.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `npm run verify` when `package.json` has a `verify` script. Verification

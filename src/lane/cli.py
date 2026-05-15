@@ -51,6 +51,7 @@ from lane.state import (
     write_state,
 )
 from lane.status import collect_status_health
+from lane.sync import SyncResult, sync_lane_state
 from lane.verify import (
     VerifyError,
     VerifyResult,
@@ -179,6 +180,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Push rewritten history with git push --force-with-lease.",
     )
     push.set_defaults(handler=handle_push)
+
+    sync = subparsers.add_parser("sync", help="Refresh stored lane state.")
+    sync.add_argument(
+        "selector",
+        nargs="?",
+        help="Lane selector; omitted means current directory.",
+    )
+    sync.set_defaults(handler=handle_sync)
 
     verify = subparsers.add_parser("verify", help="Run the lane verification command.")
     verify.add_argument(
@@ -359,6 +368,15 @@ def handle_push(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_sync(args: argparse.Namespace) -> int:
+    state = _resolve_lane(args.selector)
+    result = sync_lane_state(state)
+    write_state(result.state.path, result.state)
+    _print_state(result.state)
+    _print_sync_result(result)
+    return 0
+
+
 def handle_verify(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     result = run_verify(state.path)
@@ -478,6 +496,19 @@ def _print_verification_result(result: VerifyResult) -> None:
     print(f"exit status: {result.exit_status}")
     print("summary:")
     print(result.summary)
+
+
+def _print_sync_result(result: SyncResult) -> None:
+    print("changes:")
+    if result.changes:
+        for change in result.changes:
+            print(f"- {change}")
+    else:
+        print("- none")
+    if result.warnings:
+        print("warnings:")
+        for warning in result.warnings:
+            print(f"- {warning}")
 
 
 def _print_lane_table(lanes: list[LaneState]) -> None:
