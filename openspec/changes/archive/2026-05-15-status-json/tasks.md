@@ -25,7 +25,7 @@
 
 ## 4. Review Handoff
 
-- [ ] 4.1 Push the branch
-- [ ] 4.2 Open the PR against the repo's review target branch
-- [ ] 4.3 Update proposal, design, and tasks with the PR link
-- [ ] 4.4 Hand off as `ready for review`
+- [x] 4.1 Push the branch
+- [x] 4.2 Open the PR against the repo's review target branch
+- [x] 4.3 Update proposal, design, and tasks with the PR link
+- [x] 4.4 Hand off as `ready for review`
