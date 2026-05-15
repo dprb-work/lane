@@ -9,6 +9,7 @@ from lane.state import VerificationState
 from lane.verify import (
     VerifyCommand,
     VerifyError,
+    VerifyResult,
     current_head,
     discover_verify_command,
     require_fresh_verification,
