@@ -9,6 +9,7 @@ from lane.paseo import PaseoArchiveResult, PaseoWorktree
 from lane.run import LaneCommandResult
 from lane.state import LaneState, VerificationState, read_state, write_state
 from lane.status import StatusHealth
+from lane.sync import SyncResult
 from lane.verify import VerifyCommand, VerifyResult
 
 
@@ -1071,6 +1072,41 @@ def test_push_prints_failed_verification_details(
     assert "command: just verify" in captured.out
     assert "exit status: 1" in captured.out
     assert "summary:\nfailed tests" in captured.out
+
+
+def test_sync_writes_refreshed_state_and_prints_changes(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    def fake_sync(state: LaneState) -> SyncResult:
+        return SyncResult(
+            state=LaneState(
+                **{
+                    **state.__dict__,
+                    "status": "merged",
+                    "pr": "https://github.com/acme/app/pull/123",
+                }
+            ),
+            changes=("pr: https://github.com/acme/app/pull/123", "status: merged"),
+            warnings=("review state unavailable",),
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "sync_lane_state", fake_sync)
+
+    assert cli.main(["sync"]) == 0
+
+    updated = read_state(tmp_path)
+    assert updated.status == "merged"
+    assert updated.pr == "https://github.com/acme/app/pull/123"
+    output = capsys.readouterr().out
+    assert "changes:\n- pr: https://github.com/acme/app/pull/123" in output
+    assert "- status: merged" in output
+    assert "warnings:\n- review state unavailable" in output
 
 
 def test_push_no_verify_requires_fresh_verification(

@@ -17,8 +17,8 @@ OpenSpec changes.
   judge outputs preserved for audit/debugging.
 - PR/MR body enrichment from the archived spec, including summary, acceptance,
   and completed tasks.
-- `lane sync` to refresh local lane state from external reality such as branch,
-  PR/MR URL, merge state, review state, verification freshness, and spec status.
+- Extend `lane sync` to refresh additional external reality such as review state,
+  branch/base drift, and spec status after those sources have stable APIs.
 - Durable cleanup/archive summary before Paseo archive removes the workspace,
   preserving lane id, branch, PR URL, merge status, archived spec id, and removed
   agents.
