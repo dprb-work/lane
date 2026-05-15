@@ -100,7 +100,7 @@ def test_opencode_tool_preserves_stdout_on_nonzero_exit() -> None:
 
     assert "if (code !== 0)" in text
     assert "const output = stdout.trim();" in text
-    assert "if (output)" in text
+    assert 'if (args.includes("--json") && output)' in text
     assert "resolve(output);" in text
     assert (
         "reject(new Error(stderr.trim() || `lane exited with code ${code}`));"

@@ -73,7 +73,7 @@ async function runLane(
     child.on("close", (code) => {
       if (code !== 0) {
         const output = stdout.trim();
-        if (output) {
+        if (args.includes("--json") && output) {
           resolve(output);
           return;
         }
