@@ -18,6 +18,14 @@ REVIEW_STATUSES = {"none", "approve", "comment", "reject"}
 
 
 @dataclass(frozen=True)
+class VerificationState:
+    command: str
+    exit_status: int
+    head: str
+    verified_at: str
+
+
+@dataclass(frozen=True)
 class LaneState:
     schema: int
     id: str
@@ -28,6 +36,7 @@ class LaneState:
     spec: str
     review: ReviewStatus
     pr: str | None
+    verification: VerificationState | None = None
 
 
 def state_path(workspace: Path) -> Path:
@@ -35,7 +44,7 @@ def state_path(workspace: Path) -> Path:
 
 
 def state_to_dict(state: LaneState) -> dict[str, object]:
-    return {
+    raw: dict[str, object] = {
         "schema": state.schema,
         "id": state.id,
         "status": state.status,
@@ -46,6 +55,14 @@ def state_to_dict(state: LaneState) -> dict[str, object]:
         "review": state.review,
         "pr": state.pr,
     }
+    if state.verification is not None:
+        raw["verification"] = {
+            "command": state.verification.command,
+            "exit_status": state.verification.exit_status,
+            "head": state.verification.head,
+            "verified_at": state.verification.verified_at,
+        }
+    return raw
 
 
 def validate_state(raw: Any) -> LaneState:
@@ -68,6 +85,8 @@ def validate_state(raw: Any) -> LaneState:
     if pr is not None and not isinstance(pr, str):
         raise ValueError("pr must be a string or null")
 
+    verification = _optional_verification(raw.get("verification"))
+
     return LaneState(
         schema=schema,
         id=_required_str(raw, "id"),
@@ -78,6 +97,7 @@ def validate_state(raw: Any) -> LaneState:
         spec=_required_str(raw, "spec"),
         review=review,  # type: ignore[arg-type]
         pr=pr,
+        verification=verification,
     )
 
 
@@ -119,3 +139,19 @@ def _required_int(raw: dict[str, Any], key: str) -> int:
     if not isinstance(value, int):
         raise ValueError(f"{key} must be an integer")
     return value
+
+
+def _optional_verification(raw: Any) -> VerificationState | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("verification must be a mapping")
+    exit_status = _required_int(raw, "exit_status")
+    if exit_status < 0:
+        raise ValueError("verification exit_status must be non-negative")
+    return VerificationState(
+        command=_required_str(raw, "command"),
+        exit_status=exit_status,
+        head=_required_str(raw, "head"),
+        verified_at=_required_str(raw, "verified_at"),
+    )

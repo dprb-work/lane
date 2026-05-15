@@ -46,7 +46,6 @@ def finalize_pr(
     *,
     runner: Runner | None = None,
 ) -> ForgeResult:
-    _require_tool("git")
     runner = _run if runner is None else runner
     try:
         remote = infer_forge_remote(state.path, runner=runner)
@@ -68,7 +67,6 @@ def _finalize_github_pr(
     runner: Runner,
 ) -> ForgeResult:
     repo = remote.repo
-    _run_required(["git", "push", "-u", remote.name, state.branch], state.path, runner)
 
     title = _pr_title(state.branch, state.id)
     body = pr_body(state, verification)
@@ -112,7 +110,6 @@ def _finalize_gitlab_mr(
     runner: Runner,
 ) -> ForgeResult:
     repo = remote.repo
-    _run_required(["git", "push", "-u", remote.name, state.branch], state.path, runner)
 
     title = _pr_title(state.branch, state.id)
     body = pr_body(state, verification)
@@ -206,6 +203,26 @@ def _extract_url(output: str) -> str:
         if token.startswith("http://") or token.startswith("https://"):
             return token.rstrip(".,")
     return output.strip()
+
+
+def push_branch(
+    state: LaneState,
+    *,
+    force_with_lease: bool = False,
+    runner: Runner | None = None,
+) -> str:
+    _require_tool("git")
+    runner = _run if runner is None else runner
+    try:
+        remote = infer_forge_remote(state.path, runner=runner)
+    except ForgeRemoteError as error:
+        raise ForgeError(str(error)) from error
+    argv = ["git", "push"]
+    if force_with_lease:
+        argv.append("--force-with-lease")
+    argv.extend(["-u", remote.name, state.branch])
+    _run_required(argv, state.path, runner)
+    return remote.repo
 
 
 def _pr_title(branch: str, lane_id: str) -> str:

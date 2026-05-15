@@ -14,7 +14,7 @@ from lane.cleanup import (
     ensure_clean_worktree,
     ensure_pr_merged,
 )
-from lane.forge import ForgeError, finalize_pr
+from lane.forge import ForgeError, finalize_pr, push_branch
 from lane.init import (
     InitError,
     compact_opencode_registration_note,
@@ -49,7 +49,15 @@ from lane.state import (
     state_to_dict,
     write_state,
 )
-from lane.verify import VerifyError, run_verify
+from lane.verify import (
+    VerifyError,
+    VerifyResult,
+    current_head,
+    require_fresh_verification,
+    run_verify,
+    verification_state,
+    verify_result_from_state,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -140,7 +148,35 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="Lane selector; omitted means current directory.",
     )
+    finalize.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Reuse an already fresh verification result instead of rerunning.",
+    )
+    finalize.add_argument(
+        "--force-with-lease",
+        action="store_true",
+        help="Push rewritten history with git push --force-with-lease.",
+    )
     finalize.set_defaults(handler=handle_finalize)
+
+    push = subparsers.add_parser("push", help="Publish a verified lane branch.")
+    push.add_argument(
+        "selector",
+        nargs="?",
+        help="Lane selector; omitted means current directory.",
+    )
+    push.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Reuse an already fresh verification result instead of rerunning.",
+    )
+    push.add_argument(
+        "--force-with-lease",
+        action="store_true",
+        help="Push rewritten history with git push --force-with-lease.",
+    )
+    push.set_defaults(handler=handle_push)
 
     verify = subparsers.add_parser("verify", help="Run the lane verification command.")
     verify.add_argument(
@@ -285,10 +321,11 @@ def handle_abort(args: argparse.Namespace) -> int:
 def handle_finalize(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
-    verification = run_verify(state.path)
+    state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
         print("verification failed; refusing to finalize", file=sys.stderr)
         return verification.exit_status
+    push_branch(state, force_with_lease=args.force_with_lease)
     result = finalize_pr(state, verification)
     write_state(state.path, replace(state, status="finalized", pr=result.pr_url))
     print(f"repo: {result.repo}")
@@ -296,14 +333,49 @@ def handle_finalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_push(args: argparse.Namespace) -> int:
+    state = _resolve_lane(args.selector)
+    state, verification = _publication_verification(state, no_verify=args.no_verify)
+    if verification.exit_status != 0:
+        print("verification failed; refusing to push", file=sys.stderr)
+        return verification.exit_status
+    repo = push_branch(state, force_with_lease=args.force_with_lease)
+    print(f"repo: {repo}")
+    print(f"pushed: {state.branch}")
+    return 0
+
+
 def handle_verify(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     result = run_verify(state.path)
+    if result.exit_status == 0:
+        head = current_head(state.path)
+        state = replace(state, verification=verification_state(result, head))
+        write_state(state.path, state)
     print(f"command: {result.command.label}")
     print(f"exit status: {result.exit_status}")
     print("summary:")
     print(result.summary)
     return result.exit_status
+
+
+def _publication_verification(
+    state: LaneState,
+    *,
+    no_verify: bool,
+) -> tuple[LaneState, VerifyResult]:
+    if no_verify:
+        head = current_head(state.path)
+        fresh = require_fresh_verification(state.verification, head)
+        return state, verify_result_from_state(fresh)
+
+    result = run_verify(state.path)
+    if result.exit_status != 0:
+        return state, result
+    head = current_head(state.path)
+    state = replace(state, verification=verification_state(result, head))
+    write_state(state.path, state)
+    return state, result
 
 
 def handle_review(args: argparse.Namespace) -> int:

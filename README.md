@@ -30,6 +30,11 @@ path: /path/to/paseo/worktree
 spec: fix-login-redirect
 review: none
 pr: null
+verification:
+  command: just verify
+  exit_status: 0
+  head: abc123
+  verified_at: '2026-05-15T00:00:00+00:00'
 ```
 
 The `branch` type is inferred from the branch name prefix before `/`. That type
@@ -112,6 +117,7 @@ Work from inside the Paseo workspace, then use:
 lane status
 lane list
 lane verify
+lane push
 lane review
 lane finalize
 lane cleanup
@@ -119,8 +125,8 @@ lane cleanup
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `npm run verify` when `package.json` has a `verify` script. Verification
-reports the command, exit status, and a concise output summary without mutating
-lane state.
+reports the command, exit status, and a concise output summary. Successful
+verification records freshness in `.lane/state.yaml` for the current `HEAD`.
 
 `lane list` shows known lane state discovered from Paseo-listed worktrees. It
 prints an aligned table with lane id, status, branch, review, PR, and path.
@@ -147,9 +153,17 @@ reviewers finish, `lane review` runs a foreground judge phase with the
 Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
 `comment`, or `reject`.
 
+`lane push` runs verification by default, records freshness on success, and then
+pushes the branch to the inferred forge remote with upstream setup when needed.
+Pass `--no-verify` to reuse an already fresh verification result instead of
+rerunning verification. Pass `--force-with-lease` to publish rewritten history;
+raw `--force` is not supported.
+
 `lane finalize` refuses to proceed while `openspec/changes/<spec>` still exists,
-runs verification, pushes the branch, creates or updates the GitHub PR or GitLab
-MR, stores the PR/MR URL, and marks the lane `finalized`.
+uses the same verified push lifecycle as `lane push`, creates or updates the
+GitHub PR or GitLab MR, stores the PR/MR URL, and marks the lane `finalized`.
+`--no-verify` and `--force-with-lease` are forwarded into the shared push
+lifecycle.
 
 `lane cleanup` refuses active specs and unmerged PRs before calling Paseo archive.
 Remote branch deletion requires `--delete-remote-branch` and a merged PR.
