@@ -7,8 +7,6 @@ OpenSpec changes.
 
 - Extend `lane status` health checks with optional machine-readable output and
   any additional fields discovered while designing `lane sync`.
-- Full conventional branch-prefix coverage matching repo policy, including
-  `build`, `ci`, `hotfix`, `perf`, `refactor`, `revert`, `style`, and `task`.
 - `lane doctor` for read-only diagnostics of Paseo, OpenSpec, OpenCode tool
   registration, forge CLI auth, verification discovery, and lane state validity.
 - Structured `--json` output for status/list/verify/review/push/finalize where

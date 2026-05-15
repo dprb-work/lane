@@ -5,11 +5,28 @@ import pytest
 from lane.branches import parse_branch
 
 
-def test_parse_branch_infers_lane_lite_schema() -> None:
-    branch = parse_branch("fix/login-redirect")
+@pytest.mark.parametrize(
+    "branch_type",
+    [
+        "build",
+        "chore",
+        "ci",
+        "docs",
+        "fix",
+        "hotfix",
+        "perf",
+        "refactor",
+        "revert",
+        "style",
+        "task",
+        "test",
+    ],
+)
+def test_parse_branch_infers_lane_lite_schema(branch_type: str) -> None:
+    branch = parse_branch(f"{branch_type}/login-redirect")
 
-    assert branch.branch == "fix/login-redirect"
-    assert branch.branch_type == "fix"
+    assert branch.branch == f"{branch_type}/login-redirect"
+    assert branch.branch_type == branch_type
     assert branch.slug == "login-redirect"
     assert branch.spec_schema == "lane-lite"
 
