@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -12,6 +13,19 @@ PASEO_NPM_PACKAGE = "@getpaseo/cli"
 REPORTED_TOOLS = ("paseo", "openspec", "git", "gh", "glab", "just")
 AGENT_INSTRUCTIONS_HEADER = "<!-- lane:instructions:start -->"
 AGENT_INSTRUCTIONS_FOOTER = "<!-- lane:instructions:end -->"
+PASEO_CONFIG_FILE = "paseo.json"
+SHARED_VENV_SETUP_MARKER = "# lane:shared-venv"
+SHARED_VENV_SETUP_COMMAND = """# lane:shared-venv
+if [ -d "$PASEO_SOURCE_CHECKOUT_PATH/.venv" ]; then
+  if [ -e "$PASEO_WORKTREE_PATH/.venv" ] && [ ! -L "$PASEO_WORKTREE_PATH/.venv" ]; then
+    printf 'lane shared venv target exists and is not a symlink: %s\n' \
+      "$PASEO_WORKTREE_PATH/.venv" >&2
+  else
+    ln -sfn "$PASEO_SOURCE_CHECKOUT_PATH/.venv" "$PASEO_WORKTREE_PATH/.venv"
+  fi
+else
+  printf 'lane shared venv missing: %s\n' "$PASEO_SOURCE_CHECKOUT_PATH/.venv" >&2
+fi"""
 
 AGENT_INSTRUCTIONS = f"""{AGENT_INSTRUCTIONS_HEADER}
 ## Mandatory Lane Workflow
@@ -37,6 +51,7 @@ Required commands:
 - Start Paseo-backed lanes with `lane start <type>/<slug>`.
 - Inspect work with `lane status` and `lane list`.
 - Verify with `lane verify`.
+- Run lane-scoped commands with `lane run -- <command>`.
 - Run review perspectives with `lane review`.
 - Prepare PR handoff with `lane finalize`.
 - Retire merged or canceled lanes with `lane cleanup` or `lane abort`.
@@ -57,6 +72,8 @@ class InitResult:
     gitignore: Path
     agents: Path
     agents_action: str
+    paseo_config: Path
+    paseo_config_action: str
     schema_dir: Path
     missing_tools: tuple[str, ...]
     paseo_version: str | None
@@ -68,6 +85,7 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     target = target.resolve()
     ensure_lane_ignored(target)
     agents_action = ensure_agent_instructions(target)
+    paseo_config_action = ensure_paseo_shared_venv_setup(target)
     schema_dir = install_lane_lite_schema(Path.home() if home is None else home)
     paseo_check = check_paseo_cli(target)
     missing_tools = tuple(
@@ -80,6 +98,8 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
         gitignore=target / ".gitignore",
         agents=target / "AGENTS.md",
         agents_action=agents_action,
+        paseo_config=target / PASEO_CONFIG_FILE,
+        paseo_config_action=paseo_config_action,
         schema_dir=schema_dir,
         missing_tools=missing_tools,
         paseo_version=paseo_check.version,
@@ -199,6 +219,75 @@ def ensure_agent_instructions(target: Path) -> str:
         encoding="utf-8",
     )
     return "created"
+
+
+def ensure_paseo_shared_venv_setup(target: Path) -> str:
+    path = target / PASEO_CONFIG_FILE
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise InitError(f"invalid paseo.json: {error}") from error
+        if not isinstance(raw, dict):
+            raise InitError("invalid paseo.json: root must be an object")
+        config = raw
+        action = "updated"
+    else:
+        config = {}
+        action = "created"
+
+    worktree = config.get("worktree")
+    if worktree is None:
+        worktree = {}
+        config["worktree"] = worktree
+    if not isinstance(worktree, dict):
+        raise InitError("invalid paseo.json: worktree must be an object")
+
+    setup = _normalize_setup_commands(worktree.get("setup"))
+    managed_indexes = [
+        index
+        for index, command in enumerate(setup)
+        if SHARED_VENV_SETUP_MARKER in command
+    ]
+    if (
+        len(managed_indexes) == 1
+        and setup[managed_indexes[0]] == SHARED_VENV_SETUP_COMMAND
+    ):
+        return "unchanged"
+
+    if managed_indexes:
+        managed_index = managed_indexes[0]
+        setup = [
+            command
+            for command in setup
+            if SHARED_VENV_SETUP_MARKER not in command
+        ]
+        setup.insert(managed_index, SHARED_VENV_SETUP_COMMAND)
+        worktree["setup"] = setup
+        path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        return "updated"
+
+    worktree["setup"] = [*setup, SHARED_VENV_SETUP_COMMAND]
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    return action
+
+
+def _normalize_setup_commands(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw] if raw.strip() else []
+    if isinstance(raw, list):
+        commands: list[str] = []
+        for item in raw:
+            if not isinstance(item, str):
+                raise InitError(
+                    "invalid paseo.json: worktree.setup must contain strings"
+                )
+            if item.strip():
+                commands.append(item)
+        return commands
+    raise InitError("invalid paseo.json: worktree.setup must be a string or array")
 
 
 def install_lane_lite_schema(home: Path) -> Path:
