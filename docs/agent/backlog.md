@@ -5,9 +5,8 @@ OpenSpec changes.
 
 ## Deferred Features
 
-- Richer `lane status` health checks: dirty worktree summary, current `HEAD`,
-  verification freshness, active vs archived spec, upstream branch, and PR/MR
-  merge state.
+- Extend `lane status` health checks with optional machine-readable output and
+  any additional fields discovered while designing `lane sync`.
 - Full conventional branch-prefix coverage matching repo policy, including
   `build`, `ci`, `hotfix`, `perf`, `refactor`, `revert`, `style`, and `task`.
 - `lane doctor` for read-only diagnostics of Paseo, OpenSpec, OpenCode tool

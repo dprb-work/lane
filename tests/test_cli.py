@@ -8,6 +8,7 @@ from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
 from lane.run import LaneCommandResult
 from lane.state import LaneState, VerificationState, read_state, write_state
+from lane.status import StatusHealth
 from lane.verify import VerifyCommand, VerifyResult
 
 
@@ -456,6 +457,38 @@ def test_status_resolves_exact_branch_from_known_lanes(
     assert cli.main(["status", "fix/login"]) == 0
 
 
+def test_status_prints_health_fields(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(workspace, branch="fix/login")
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "collect_status_health",
+        lambda state: StatusHealth(
+            worktree="clean",
+            head="abc123",
+            upstream="upstream/fix/login",
+            verification="missing",
+            spec="active",
+            pr="none",
+        ),
+    )
+
+    assert cli.main(["status", str(workspace)]) == 0
+
+    output = capsys.readouterr().out
+    assert "health.worktree: clean" in output
+    assert "health.head: abc123" in output
+    assert "health.upstream: upstream/fix/login" in output
+    assert "health.verification: missing" in output
+    assert "health.spec: active" in output
+    assert "health.pr: none" in output
+
+
 def test_status_resolves_slug_from_known_lanes(
     tmp_path: Path,
     monkeypatch,
@@ -858,6 +891,45 @@ def test_finalize_updates_state_with_pr_url(
     assert updated.verification.head == "abc123"
 
 
+def test_finalize_prints_failed_verification_details(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(
+                argv=["npm", "run", "verify"],
+                label="npm run verify",
+            ),
+            exit_status=127,
+            summary="sh: 1: ruff: not found",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: (_ for _ in ()).throw(
+            AssertionError("should not push")
+        ),
+    )
+
+    assert cli.main(["finalize"]) == 127
+
+    captured = capsys.readouterr()
+    assert "verification failed; refusing to finalize" in captured.err
+    assert "command: npm run verify" in captured.out
+    assert "exit status: 127" in captured.out
+    assert "summary:\nsh: 1: ruff: not found" in captured.out
+
+
 def test_verify_records_successful_freshness(
     tmp_path: Path,
     monkeypatch,
@@ -971,6 +1043,34 @@ def test_push_runs_verification_before_pushing(
 
     assert pushed == [("fix/login", False)]
     assert read_state(tmp_path).verification is not None
+
+
+def test_push_prints_failed_verification_details(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=1,
+            summary="failed tests",
+        ),
+    )
+
+    assert cli.main(["push"]) == 1
+
+    captured = capsys.readouterr()
+    assert "verification failed; refusing to push" in captured.err
+    assert "command: just verify" in captured.out
+    assert "exit status: 1" in captured.out
+    assert "summary:\nfailed tests" in captured.out
 
 
 def test_push_no_verify_requires_fresh_verification(
