@@ -1,5 +1,7 @@
 # shared-venv-run
 
+Archived for PR 12: https://github.com/dprb-work/lane/pull/12
+
 Add a lane-aware command runner and shared venv setup convention so Paseo-created
 worktrees can reuse the source checkout's Python environment without requiring a
 per-lane dependency install.
