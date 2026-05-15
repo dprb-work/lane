@@ -236,10 +236,18 @@ Branch prefix selects the OpenSpec schema internally:
 
 | Branch prefix | Schema |
 | --- | --- |
+| `build/` | `lane-lite` |
+| `chore/` | `lane-lite` |
+| `ci/` | `lane-lite` |
+| `docs/` | `lane-lite` |
 | `feat/` | `spec-driven` |
 | `fix/` | `lane-lite` |
-| `docs/` | `lane-lite` |
-| `chore/` | `lane-lite` |
+| `hotfix/` | `lane-lite` |
+| `perf/` | `lane-lite` |
+| `refactor/` | `lane-lite` |
+| `revert/` | `lane-lite` |
+| `style/` | `lane-lite` |
+| `task/` | `lane-lite` |
 | `test/` | `lane-lite` |
 
 Unsupported prefixes fail with guidance. The initial command surface has no
