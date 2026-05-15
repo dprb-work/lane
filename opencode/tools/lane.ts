@@ -7,6 +7,16 @@ type ArgValue = boolean | string | null | undefined;
 
 const REPO_ROOT = "__LANE_REPO_ROOT__";
 const LANE = process.env.LANE_BIN || path.join(REPO_ROOT, ".venv", "bin", "lane");
+const JSON_COMMANDS = new Set([
+  "doctor",
+  "finalize",
+  "list",
+  "push",
+  "review",
+  "status",
+  "sync",
+  "verify",
+]);
 
 function expandHome(raw: string): string {
   if (!raw.startsWith("~/")) return raw;
@@ -62,6 +72,11 @@ async function runLane(
     child.on("error", reject);
     child.on("close", (code) => {
       if (code !== 0) {
+        const output = stdout.trim();
+        if (output) {
+          resolve(output);
+          return;
+        }
         reject(new Error(stderr.trim() || `lane exited with code ${code}`));
         return;
       }
@@ -93,7 +108,18 @@ const commandSchema = tool.schema.discriminatedUnion("name", [
     name: tool.schema.literal("list"),
   }),
   tool.schema.object({
+    name: tool.schema.literal("doctor"),
+    path: tool.schema
+      .string()
+      .optional()
+      .describe("Repository or lane path to inspect. Defaults to current directory."),
+  }),
+  tool.schema.object({
     name: tool.schema.literal("verify"),
+    selector: selectorField,
+  }),
+  tool.schema.object({
+    name: tool.schema.literal("sync"),
     selector: selectorField,
   }),
   tool.schema.object({
@@ -105,6 +131,26 @@ const commandSchema = tool.schema.discriminatedUnion("name", [
   tool.schema.object({
     name: tool.schema.literal("finalize"),
     selector: selectorField,
+    noVerify: tool.schema
+      .boolean()
+      .optional()
+      .describe("Reuse an already fresh verification result instead of rerunning."),
+    forceWithLease: tool.schema
+      .boolean()
+      .optional()
+      .describe("Push rewritten history with git push --force-with-lease."),
+  }),
+  tool.schema.object({
+    name: tool.schema.literal("push"),
+    selector: selectorField,
+    noVerify: tool.schema
+      .boolean()
+      .optional()
+      .describe("Reuse an already fresh verification result instead of rerunning."),
+    forceWithLease: tool.schema
+      .boolean()
+      .optional()
+      .describe("Push rewritten history with git push --force-with-lease."),
   }),
   tool.schema.object({
     name: tool.schema.literal("cleanup"),
@@ -128,44 +174,75 @@ const commandSchema = tool.schema.discriminatedUnion("name", [
 ]);
 
 function buildCommand(command: any, directory: string): string[] {
+  let argv: string[];
   switch (command.name) {
     case "init":
-      return ["init", ...(command.path ? [resolvePath(command.path, directory)] : [])];
+      argv = ["init", ...(command.path ? [resolvePath(command.path, directory)] : [])];
+      break;
     case "start":
-      return ["start", command.branch, ...option("--base", command.base)];
+      argv = ["start", command.branch, ...option("--base", command.base)];
+      break;
     case "status":
-      return ["status", ...selector(command.selector, directory)];
+      argv = ["status", ...selector(command.selector, directory)];
+      break;
     case "list":
-      return ["list"];
+      argv = ["list"];
+      break;
+    case "doctor":
+      argv = ["doctor", ...(command.path ? [resolvePath(command.path, directory)] : [])];
+      break;
     case "verify":
-      return ["verify", ...selector(command.selector, directory)];
+      argv = ["verify", ...selector(command.selector, directory)];
+      break;
+    case "sync":
+      argv = ["sync", ...selector(command.selector, directory)];
+      break;
     case "review":
-      return [
+      argv = [
         "review",
         ...selector(command.selector, directory),
         ...(command.reviewAgent ?? []).flatMap((name: string) => option("--review-agent", name)),
         ...option("--review-judge", command.reviewJudge),
       ];
+      break;
     case "finalize":
-      return ["finalize", ...selector(command.selector, directory)];
+      argv = [
+        "finalize",
+        ...selector(command.selector, directory),
+        ...option("--no-verify", command.noVerify),
+        ...option("--force-with-lease", command.forceWithLease),
+      ];
+      break;
+    case "push":
+      argv = [
+        "push",
+        ...selector(command.selector, directory),
+        ...option("--no-verify", command.noVerify),
+        ...option("--force-with-lease", command.forceWithLease),
+      ];
+      break;
     case "cleanup":
-      return ["cleanup", ...selector(command.selector, directory), ...option("--delete-remote-branch", command.deleteRemoteBranch)];
+      argv = ["cleanup", ...selector(command.selector, directory), ...option("--delete-remote-branch", command.deleteRemoteBranch)];
+      break;
     case "abort":
-      return [
+      argv = [
         "abort",
         ...selector(command.selector, directory),
         ...option("--discard", command.discard),
         ...option("--close-pr", command.closePr),
         ...option("--delete-remote-branch", command.deleteRemoteBranch),
       ];
+      break;
     case "raw":
       return command.argv;
   }
+
+  return JSON_COMMANDS.has(command.name) ? [...argv, "--json"] : argv;
 }
 
 export default tool({
   description:
-    "Run the Paseo-native lane CLI with typed arguments for init, start, status, list, verify, review, finalize, cleanup, and abort.",
+    "Run the Paseo-native lane CLI with typed arguments for init, start, status, list, doctor, verify, sync, review, push, finalize, cleanup, and abort.",
   args: {
     command: commandSchema.describe("Structured lane command to execute."),
   },
