@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 from lane.run import Runner as CommandRunner
-from lane.run import run_lane_command
+from lane.run import command_env, run_lane_command
 from lane.state import VerificationState
 
 
@@ -57,7 +57,8 @@ def run_verify(
 ) -> VerifyResult:
     command = discover_verify_command(workspace)
     executable = command.argv[0]
-    if shutil.which(executable) is None:
+    env = command_env(workspace)
+    if shutil.which(executable, path=env.get("PATH")) is None:
         raise VerifyError(
             f"required verifier executable not found on PATH: {executable}"
         )

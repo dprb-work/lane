@@ -8,6 +8,7 @@ import pytest
 
 from lane.init import (
     AGENT_INSTRUCTIONS_HEADER,
+    SHARED_VENV_SETUP_COMMAND,
     InitError,
     check_paseo_cli,
     compact_tool_requirement_note,
@@ -89,6 +90,30 @@ def test_ensure_paseo_shared_venv_setup_appends_once(tmp_path: Path) -> None:
     assert raw["worktree"]["setup"][0] == "npm ci"
     assert raw["worktree"]["setup"][1].startswith("# lane:shared-venv")
     assert raw["scripts"] == {"test": {"command": "npm test"}}
+
+
+def test_ensure_paseo_shared_venv_setup_updates_stale_managed_command(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "paseo.json"
+    path.write_text(
+        json.dumps(
+            {
+                "worktree": {
+                    "setup": [
+                        "npm ci",
+                        "# lane:shared-venv\nprintf 'old command\\n'",
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert ensure_paseo_shared_venv_setup(tmp_path) == "updated"
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["worktree"]["setup"] == ["npm ci", SHARED_VENV_SETUP_COMMAND]
 
 
 def test_ensure_paseo_shared_venv_setup_rejects_invalid_config(

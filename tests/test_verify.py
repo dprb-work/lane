@@ -54,7 +54,10 @@ def test_run_verify_executes_in_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "justfile").write_text("verify:\n  pytest\n", encoding="utf-8")
-    monkeypatch.setattr("lane.verify.shutil.which", lambda _: "/usr/bin/just")
+    monkeypatch.setattr(
+        "lane.verify.shutil.which",
+        lambda _, path=None: "/usr/bin/just",
+    )
     calls: list[tuple[list[str], Path, bool]] = []
 
     def runner(
@@ -74,12 +77,36 @@ def test_run_verify_executes_in_workspace(
     assert result.summary == "ok"
 
 
+def test_run_verify_finds_verifier_from_workspace_venv(tmp_path: Path) -> None:
+    (tmp_path / "justfile").write_text("verify:\n  pytest\n", encoding="utf-8")
+    just = tmp_path / ".venv" / "bin" / "just"
+    just.parent.mkdir(parents=True)
+    just.write_text("#!/bin/sh\n", encoding="utf-8")
+    just.chmod(0o755)
+    calls: list[dict[str, str]] = []
+
+    def runner(
+        argv: list[str],
+        cwd: Path,
+        env: dict[str, str],
+        *,
+        capture_output: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(env)
+        return _result("ok\n")
+
+    result = run_verify(tmp_path, runner=runner)
+
+    assert result.exit_status == 0
+    assert calls[0]["VIRTUAL_ENV"] == str(tmp_path / ".venv")
+
+
 def test_run_verify_reports_missing_executable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "justfile").write_text("verify:\n  pytest\n", encoding="utf-8")
-    monkeypatch.setattr("lane.verify.shutil.which", lambda _: None)
+    monkeypatch.setattr("lane.verify.shutil.which", lambda _, path=None: None)
 
     with pytest.raises(VerifyError, match="not found on PATH"):
         run_verify(

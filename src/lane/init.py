@@ -244,8 +244,28 @@ def ensure_paseo_shared_venv_setup(target: Path) -> str:
         raise InitError("invalid paseo.json: worktree must be an object")
 
     setup = _normalize_setup_commands(worktree.get("setup"))
-    if any(SHARED_VENV_SETUP_MARKER in command for command in setup):
+    managed_indexes = [
+        index
+        for index, command in enumerate(setup)
+        if SHARED_VENV_SETUP_MARKER in command
+    ]
+    if (
+        len(managed_indexes) == 1
+        and setup[managed_indexes[0]] == SHARED_VENV_SETUP_COMMAND
+    ):
         return "unchanged"
+
+    if managed_indexes:
+        managed_index = managed_indexes[0]
+        setup = [
+            command
+            for command in setup
+            if SHARED_VENV_SETUP_MARKER not in command
+        ]
+        setup.insert(managed_index, SHARED_VENV_SETUP_COMMAND)
+        worktree["setup"] = setup
+        path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        return "updated"
 
     worktree["setup"] = [*setup, SHARED_VENV_SETUP_COMMAND]
     path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
