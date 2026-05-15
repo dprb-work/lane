@@ -176,6 +176,181 @@ def test_start_reports_rollback_failure_when_spec_creation_fails(
     assert not (workspace / ".lane" / "state.yaml").exists()
 
 
+def test_attach_current_paseo_workspace_writes_state_and_creates_spec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    spec_calls: list[tuple[str, str, str, Path]] = []
+
+    def fake_create_spec(
+        name: str,
+        *,
+        schema: str,
+        description: str,
+        cwd: Path,
+    ) -> None:
+        spec_calls.append((name, schema, description, cwd))
+
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+    monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+
+    assert cli.main(["attach"]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login"
+    assert state.branch == "fix/login"
+    assert state.base == "main"
+    assert state.path == workspace
+    assert state.spec == "login"
+    assert spec_calls == [
+        ("login", "lane-lite", "Lane for fix/login", workspace),
+    ]
+
+
+def test_attach_existing_state_is_idempotent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(workspace, branch="fix/login")
+    write_state(workspace, state)
+    spec_calls: list[str] = []
+
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+
+    assert cli.main(["attach"]) == 0
+
+    assert read_state(workspace) == state
+    assert spec_calls == []
+
+
+def test_attach_path_selector_lists_from_selected_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    outside = tmp_path / "outside"
+    workspace = tmp_path / "workspace"
+    outside.mkdir()
+    workspace.mkdir()
+
+    def fake_list_worktrees(*, cwd: Path):
+        if cwd != workspace:
+            raise cli.PaseoError(f"unexpected cwd: {cwd}")
+        return [PaseoWorktree(name="login", branch="fix/login", path=workspace)]
+
+    monkeypatch.chdir(outside)
+    monkeypatch.setattr(cli, "list_worktrees", fake_list_worktrees)
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: None,
+    )
+
+    assert cli.main(["attach", str(workspace)]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login"
+    assert state.branch == "fix/login"
+
+
+def test_attach_branch_selector_preserves_existing_active_spec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "openspec" / "changes" / "login").mkdir(parents=True)
+    spec_calls: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: spec_calls.append(name),
+    )
+
+    assert cli.main(["attach", "fix/login"]) == 0
+
+    state = read_state(workspace)
+    assert state.id == "login"
+    assert state.branch == "fix/login"
+    assert state.spec == "login"
+    assert spec_calls == []
+
+
+def test_attach_pr_selector_records_provider_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda **_: [PaseoWorktree(name="login", branch="fix/login", path=workspace)],
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: None,
+    )
+    monkeypatch.setattr(
+        cli,
+        "resolve_lane_target",
+        lambda selector, lanes, *, cwd: cli.LaneTarget(
+            selector=selector,
+            branch="fix/login",
+            base="release",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["attach", "#123"]) == 0
+
+    state = read_state(workspace)
+    assert state.base == "release"
+    assert state.pr == "https://github.com/acme/app/pull/123"
+
+
+def test_attach_refuses_ambiguous_slug(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda **_: [
+            PaseoWorktree(name="login-a", branch="fix/login", path=tmp_path / "one"),
+            PaseoWorktree(name="login-b", branch="feat/login", path=tmp_path / "two"),
+        ],
+    )
+
+    assert cli.main(["attach", "login"]) == 2
+
+
 def test_cleanup_archives_resolved_lane_worktree_name(
     tmp_path: Path,
     monkeypatch,
