@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from lane import __version__
@@ -84,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
         "selector",
         nargs="?",
         help="Lane selector; omitted means current directory.",
+    )
+    status.add_argument(
+        "--json",
+        action="store_true",
+        help="Print stored state and health facts as JSON.",
     )
     status.set_defaults(handler=handle_status)
 
@@ -313,6 +319,9 @@ def handle_doctor(args: argparse.Namespace) -> int:
 
 def handle_status(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
+    if args.json:
+        _print_status_json(state)
+        return 0
     _print_state(state)
     _print_status_health(state)
     return 0
@@ -505,6 +514,19 @@ def _print_status_health(state: LaneState) -> None:
     print(f"health.verification: {health.verification}")
     print(f"health.spec: {health.spec}")
     print(f"health.pr: {health.pr}")
+
+
+def _print_status_json(state: LaneState) -> None:
+    health = collect_status_health(state)
+    print(
+        json.dumps(
+            {
+                "state": state_to_dict(state),
+                "health": asdict(health),
+            },
+            indent=2,
+        )
+    )
 
 
 def _print_verification_result(result: VerifyResult) -> None:

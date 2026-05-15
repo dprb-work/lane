@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from lane import cli
@@ -511,6 +512,68 @@ def test_status_prints_health_fields(
     assert "health.verification: missing" in output
     assert "health.spec: active" in output
     assert "health.pr: none" in output
+
+
+def test_status_json_prints_state_and_health(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(
+        workspace,
+        branch="fix/login",
+        verification=VerificationState(
+            command="just verify",
+            exit_status=0,
+            head="abc123",
+            verified_at="2026-05-15T00:00:00+00:00",
+        ),
+    )
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "collect_status_health",
+        lambda state: StatusHealth(
+            worktree="clean",
+            head="abc123",
+            upstream="upstream/fix/login",
+            verification="fresh (just verify)",
+            spec="active",
+            pr="none",
+        ),
+    )
+
+    assert cli.main(["status", "--json", str(workspace)]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "state": {
+            "schema": 1,
+            "id": "login",
+            "status": "active",
+            "branch": "fix/login",
+            "base": "main",
+            "path": str(workspace),
+            "spec": "login",
+            "review": "none",
+            "pr": None,
+            "verification": {
+                "command": "just verify",
+                "exit_status": 0,
+                "head": "abc123",
+                "verified_at": "2026-05-15T00:00:00+00:00",
+            },
+        },
+        "health": {
+            "worktree": "clean",
+            "head": "abc123",
+            "upstream": "upstream/fix/login",
+            "verification": "fresh (just verify)",
+            "spec": "active",
+            "pr": "none",
+        },
+    }
 
 
 def test_status_resolves_slug_from_known_lanes(
