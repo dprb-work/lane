@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from lane import cli
+from lane.doctor import Diagnostic
 from lane.forge import ForgeResult
 from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
@@ -456,6 +457,28 @@ def test_status_resolves_exact_branch_from_known_lanes(
     )
 
     assert cli.main(["status", "fix/login"]) == 0
+
+
+def test_doctor_prints_diagnostics_and_returns_failure(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "run_doctor",
+        lambda path: (
+            Diagnostic("ok", "git", "/bin/git"),
+            Diagnostic("fail", "paseo", "not found on PATH"),
+        ),
+    )
+
+    assert cli.main(["doctor", str(tmp_path)]) == 1
+
+    assert capsys.readouterr().out == (
+        "ok: git: /bin/git\n"
+        "fail: paseo: not found on PATH\n"
+    )
 
 
 def test_status_prints_health_fields(

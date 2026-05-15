@@ -117,6 +117,7 @@ Work from inside the Paseo workspace, then use:
 ```bash
 lane status
 lane list
+lane doctor
 lane verify
 lane run -- python -m pytest
 lane push
@@ -139,6 +140,13 @@ lane `merged` when the recorded or discovered PR/MR is merged, and clears stale
 verification freshness when the current `HEAD` no longer matches the recorded
 verification. It prints the refreshed state plus a compact list of changes and
 warnings.
+
+`lane doctor [path]` runs read-only environment diagnostics and prints compact
+`ok`, `warn`, and `fail` lines for required tools, Paseo CLI and daemon access,
+OpenSpec, forge CLI availability for the detected remote provider, verification
+command discovery, and lane state validity when `.lane/state.yaml` is present.
+It exits non-zero when required checks fail, but warnings such as missing lane
+state outside a lane do not fail the command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `npm run verify` when `package.json` has a `verify` script. Verification
