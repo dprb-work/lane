@@ -94,6 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
     status.set_defaults(handler=handle_status)
 
     list_command = subparsers.add_parser("list", help="List known lanes.")
+    list_command.add_argument(
+        "--json",
+        action="store_true",
+        help="Print known lanes as JSON.",
+    )
     list_command.set_defaults(handler=handle_list)
 
     attach = subparsers.add_parser(
@@ -122,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=".",
         help="Repository or lane path to inspect (default: current directory).",
+    )
+    doctor.add_argument(
+        "--json",
+        action="store_true",
+        help="Print diagnostics as JSON.",
     )
     doctor.set_defaults(handler=handle_doctor)
 
@@ -177,6 +187,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Push rewritten history with git push --force-with-lease.",
     )
+    finalize.add_argument(
+        "--json",
+        action="store_true",
+        help="Print finalize result as JSON.",
+    )
     finalize.set_defaults(handler=handle_finalize)
 
     push = subparsers.add_parser("push", help="Publish a verified lane branch.")
@@ -195,6 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Push rewritten history with git push --force-with-lease.",
     )
+    push.add_argument(
+        "--json",
+        action="store_true",
+        help="Print push result as JSON.",
+    )
     push.set_defaults(handler=handle_push)
 
     sync = subparsers.add_parser("sync", help="Refresh stored lane state.")
@@ -203,6 +223,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="Lane selector; omitted means current directory.",
     )
+    sync.add_argument(
+        "--json",
+        action="store_true",
+        help="Print refreshed state and changes as JSON.",
+    )
     sync.set_defaults(handler=handle_sync)
 
     verify = subparsers.add_parser("verify", help="Run the lane verification command.")
@@ -210,6 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
         "selector",
         nargs="?",
         help="Lane selector; omitted means current directory.",
+    )
+    verify.add_argument(
+        "--json",
+        action="store_true",
+        help="Print verification result as JSON.",
     )
     verify.set_defaults(handler=handle_verify)
 
@@ -236,6 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument(
         "--review-judge",
         help="Paseo provider mode/review agent name for the final judge phase.",
+    )
+    review.add_argument(
+        "--json",
+        action="store_true",
+        help="Print review result as JSON.",
     )
     review.set_defaults(handler=handle_review)
 
@@ -313,6 +348,14 @@ def handle_init(args: argparse.Namespace) -> int:
 
 def handle_doctor(args: argparse.Namespace) -> int:
     diagnostics = run_doctor(Path(args.path))
+    if args.json:
+        _print_json(
+            {
+                "diagnostics": [asdict(diagnostic) for diagnostic in diagnostics],
+                "has_failures": has_failures(diagnostics),
+            }
+        )
+        return 1 if has_failures(diagnostics) else 0
     _print_diagnostics(diagnostics)
     return 1 if has_failures(diagnostics) else 0
 
@@ -329,6 +372,9 @@ def handle_status(args: argparse.Namespace) -> int:
 
 def handle_list(args: argparse.Namespace) -> int:
     lanes = sorted(_known_lane_states(), key=lambda lane: (lane.id, lane.branch))
+    if args.json:
+        _print_json({"lanes": [state_to_dict(state) for state in lanes]})
+        return 0
     _print_lane_table(lanes)
     return 0
 
@@ -369,12 +415,32 @@ def handle_finalize(args: argparse.Namespace) -> int:
     require_spec_archived(state.path, state.spec)
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
+        if args.json:
+            _print_json(
+                {
+                    "error": "verification failed; refusing to finalize",
+                    "state": state_to_dict(state),
+                    "verification": _verification_result_to_dict(verification),
+                }
+            )
+            return verification.exit_status
         print("verification failed; refusing to finalize", file=sys.stderr)
         _print_verification_result(verification)
         return verification.exit_status
     push_branch(state, force_with_lease=args.force_with_lease)
     result = finalize_pr(state, verification)
-    write_state(state.path, replace(state, status="finalized", pr=result.pr_url))
+    state = replace(state, status="finalized", pr=result.pr_url)
+    write_state(state.path, state)
+    if args.json:
+        _print_json(
+            {
+                "repo": result.repo,
+                "pr": result.pr_url,
+                "state": state_to_dict(state),
+                "verification": _verification_result_to_dict(verification),
+            }
+        )
+        return 0
     print(f"repo: {result.repo}")
     print(f"pr: {result.pr_url}")
     return 0
@@ -384,10 +450,29 @@ def handle_push(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
+        if args.json:
+            _print_json(
+                {
+                    "error": "verification failed; refusing to push",
+                    "state": state_to_dict(state),
+                    "verification": _verification_result_to_dict(verification),
+                }
+            )
+            return verification.exit_status
         print("verification failed; refusing to push", file=sys.stderr)
         _print_verification_result(verification)
         return verification.exit_status
     repo = push_branch(state, force_with_lease=args.force_with_lease)
+    if args.json:
+        _print_json(
+            {
+                "repo": repo,
+                "pushed": state.branch,
+                "state": state_to_dict(state),
+                "verification": _verification_result_to_dict(verification),
+            }
+        )
+        return 0
     print(f"repo: {repo}")
     print(f"pushed: {state.branch}")
     return 0
@@ -397,6 +482,9 @@ def handle_sync(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     result = sync_lane_state(state)
     write_state(result.state.path, result.state)
+    if args.json:
+        _print_json(_sync_result_to_dict(result))
+        return 0
     _print_state(result.state)
     _print_sync_result(result)
     return 0
@@ -409,6 +497,14 @@ def handle_verify(args: argparse.Namespace) -> int:
         head = current_head(state.path)
         state = replace(state, verification=verification_state(result, head))
         write_state(state.path, state)
+    if args.json:
+        _print_json(
+            {
+                "state": state_to_dict(state),
+                "verification": _verification_result_to_dict(result),
+            }
+        )
+        return result.exit_status
     _print_verification_result(result)
     return result.exit_status
 
@@ -470,7 +566,18 @@ def handle_review(args: argparse.Namespace) -> int:
         if agents is not None
         else run_review(state.path, **kwargs)
     )
-    write_state(state.path, replace(state, review=result.review))
+    state = replace(state, review=result.review)
+    write_state(state.path, state)
+    if args.json:
+        _print_json(
+            {
+                "review": result.review,
+                "state": state_to_dict(state),
+                "missing_agents": list(result.missing_agents),
+                "runs": [asdict(run) for run in result.runs],
+            }
+        )
+        return 0 if result.review in {"approve", "comment", "none"} else 1
     print(f"review: {result.review}")
     if result.missing_agents:
         print(f"missing agents: {', '.join(result.missing_agents)}")
@@ -518,15 +625,35 @@ def _print_status_health(state: LaneState) -> None:
 
 def _print_status_json(state: LaneState) -> None:
     health = collect_status_health(state)
-    print(
-        json.dumps(
-            {
-                "state": state_to_dict(state),
-                "health": asdict(health),
-            },
-            indent=2,
-        )
+    _print_json(
+        {
+            "state": state_to_dict(state),
+            "health": asdict(health),
+        }
     )
+
+
+def _verification_result_to_dict(result: VerifyResult) -> dict[str, object]:
+    return {
+        "command": {
+            "argv": result.command.argv,
+            "label": result.command.label,
+        },
+        "exit_status": result.exit_status,
+        "summary": result.summary,
+    }
+
+
+def _sync_result_to_dict(result: SyncResult) -> dict[str, object]:
+    return {
+        "state": state_to_dict(result.state),
+        "changes": list(result.changes),
+        "warnings": list(result.warnings),
+    }
+
+
+def _print_json(raw: object) -> None:
+    print(json.dumps(raw, indent=2))
 
 
 def _print_verification_result(result: VerifyResult) -> None:

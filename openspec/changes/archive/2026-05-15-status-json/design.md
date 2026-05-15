@@ -1,4 +1,4 @@
-# Design: Status JSON
+# Design: Lifecycle JSON Output
 
 ## Metadata
 
@@ -10,8 +10,10 @@
 
 ## Technical Approach
 
-`lane status --json` resolves the lane exactly like human `lane status`, collects
-the same health facts, and serializes a two-key object:
+JSON-enabled commands resolve lanes and execute side effects exactly like their
+human-output equivalents, then serialize the same result data as compact JSON.
+`lane status --json` collects the same health facts and serializes a two-key
+object:
 
 ```json
 {
@@ -20,18 +22,20 @@ the same health facts, and serializes a two-key object:
 }
 ```
 
-This is the smallest viable path because it avoids a parallel status model and
-does not widen structured-output policy for other commands in this slice.
+Other commands use similarly direct shapes, such as `{"lanes": [...]}`,
+`{"diagnostics": [...]}`, or lane-scoped `{"state": ..., "verification": ...}`
+objects. This is the smallest viable path because it avoids a parallel output
+model and generic JSON framework.
 
 ## Goals
 
-- Make `lane status` machine-readable on request.
+- Make common lane lifecycle outcomes machine-readable on request.
 - Keep the existing human text output byte-for-byte compatible apart from help
   text.
 
 ## Non-Goals
 
-- Add structured output to other commands.
+- Add structured output to cleanup/abort/run streaming flows.
 - Introduce schema versioning for CLI JSON output.
 - Mutate lane state from status.
 
@@ -39,20 +43,21 @@ does not widen structured-output policy for other commands in this slice.
 
 ### Surface changes
 
-- Add `lane status --json`.
+- Add `--json` to status/list/doctor/verify/sync/review/push/finalize.
 - Output stored state under `state` using the existing state serialization shape.
 - Output status health under `health` using the existing `StatusHealth` fields.
 
 ### Internal changes
 
-- Add a CLI-only JSON printer that reuses `state_to_dict` and `asdict`.
-- Keep `collect_status_health` unchanged.
+- Add CLI-only JSON printers that reuse `state_to_dict`, `asdict`, and existing
+  result dataclasses.
+- Keep command execution paths unchanged except for output formatting.
 
 ## Alternatives Considered
 
 - Alternative: add a generic JSON framework for every command now.
-  Why it was not chosen: the backlog still needs command-by-command semantics;
-  this slice only needs status.
+  Why it was not chosen: command semantics still differ enough that direct shapes
+  are clearer and smaller.
 
 ## Risks And Mitigations
 
@@ -62,5 +67,5 @@ does not widen structured-output policy for other commands in this slice.
 
 ## Verification Plan
 
-- `pytest tests/test_cli.py -k status_json`
+- `pytest tests/test_cli.py -k json`
 - `npm run verify`

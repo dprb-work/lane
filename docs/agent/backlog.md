@@ -9,8 +9,6 @@ OpenSpec changes.
   designing later lifecycle commands.
 - Extend `lane doctor` with OpenCode tool registration, forge auth, and richer
   lane state validity checks.
-- Structured `--json` output for list/verify/review/push/finalize where it fits
-  the command semantics.
 - Review artifact capture under ignored lane-local storage, with reviewer and
   judge outputs preserved for audit/debugging.
 - PR/MR body enrichment from the archived spec, including summary, acceptance,
