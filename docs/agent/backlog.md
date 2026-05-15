@@ -7,8 +7,8 @@ OpenSpec changes.
 
 - Extend `lane status` health checks with optional machine-readable output and
   any additional fields discovered while designing `lane sync`.
-- `lane doctor` for read-only diagnostics of Paseo, OpenSpec, OpenCode tool
-  registration, forge CLI auth, verification discovery, and lane state validity.
+- Extend `lane doctor` with OpenCode tool registration, forge auth, and richer
+  lane state validity checks.
 - Structured `--json` output for status/list/verify/review/push/finalize where
   it fits the command semantics.
 - Review artifact capture under ignored lane-local storage, with reviewer and

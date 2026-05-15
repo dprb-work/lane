@@ -14,6 +14,7 @@ from lane.cleanup import (
     ensure_clean_worktree,
     ensure_pr_merged,
 )
+from lane.doctor import Diagnostic, has_failures, run_doctor
 from lane.forge import ForgeError, finalize_pr, push_branch
 from lane.init import (
     InitError,
@@ -108,6 +109,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Repository path to initialize (default: current directory).",
     )
     init.set_defaults(handler=handle_init)
+
+    doctor = subparsers.add_parser("doctor", help="Run read-only diagnostics.")
+    doctor.add_argument(
+        "path",
+        nargs="?",
+        default=".",
+        help="Repository or lane path to inspect (default: current directory).",
+    )
+    doctor.set_defaults(handler=handle_doctor)
 
     cleanup = subparsers.add_parser("cleanup", help="Archive a completed lane.")
     cleanup.add_argument(
@@ -293,6 +303,12 @@ def handle_init(args: argparse.Namespace) -> int:
         tools = ", ".join(result.missing_tools)
         print(f"warning: missing required tools on PATH: {tools}", file=sys.stderr)
     return 0
+
+
+def handle_doctor(args: argparse.Namespace) -> int:
+    diagnostics = run_doctor(Path(args.path))
+    _print_diagnostics(diagnostics)
+    return 1 if has_failures(diagnostics) else 0
 
 
 def handle_status(args: argparse.Namespace) -> int:
@@ -509,6 +525,11 @@ def _print_sync_result(result: SyncResult) -> None:
         print("warnings:")
         for warning in result.warnings:
             print(f"- {warning}")
+
+
+def _print_diagnostics(diagnostics: tuple[Diagnostic, ...]) -> None:
+    for diagnostic in diagnostics:
+        print(f"{diagnostic.status}: {diagnostic.name}: {diagnostic.detail}")
 
 
 def _print_lane_table(lanes: list[LaneState]) -> None:
