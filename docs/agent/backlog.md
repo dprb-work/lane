@@ -5,12 +5,10 @@ OpenSpec changes.
 
 ## Deferred Features
 
-- Extend `lane status` health checks with optional machine-readable output and
-  any additional fields discovered while designing `lane sync`.
+- Extend `lane status` health checks with any additional fields discovered while
+  designing later lifecycle commands.
 - Extend `lane doctor` with OpenCode tool registration, forge auth, and richer
   lane state validity checks.
-- Structured `--json` output for status/list/verify/review/push/finalize where
-  it fits the command semantics.
 - Review artifact capture under ignored lane-local storage, with reviewer and
   judge outputs preserved for audit/debugging.
 - PR/MR body enrichment from the archived spec, including summary, acceptance,

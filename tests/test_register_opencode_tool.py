@@ -15,6 +15,7 @@ def load_register_module():
 
 
 register = load_register_module()
+TOOL_SOURCE = Path(__file__).resolve().parents[1] / "opencode" / "tools" / "lane.ts"
 
 
 def test_copy_tool_definition_replaces_existing_target(tmp_path: Path) -> None:
@@ -67,3 +68,41 @@ def test_copy_tool_definition_creates_missing_target(tmp_path: Path) -> None:
     assert (config_dir / "lane.ts").read_text(encoding="utf-8") == "tool\n"
     assert "opencode: copied" in actions
     assert "status: installed" in actions
+
+
+def test_opencode_tool_uses_json_for_structured_lifecycle_commands() -> None:
+    text = TOOL_SOURCE.read_text(encoding="utf-8")
+
+    assert "const JSON_COMMANDS = new Set([" in text
+    commands = (
+        "doctor",
+        "finalize",
+        "list",
+        "push",
+        "review",
+        "status",
+        "sync",
+        "verify",
+    )
+    for command in commands:
+        assert f'  "{command}",' in text
+    assert (
+        'return JSON_COMMANDS.has(command.name) ? [...argv, "--json"] : argv;'
+        in text
+    )
+    assert 'name: tool.schema.literal("doctor")' in text
+    assert 'name: tool.schema.literal("push")' in text
+    assert 'name: tool.schema.literal("sync")' in text
+
+
+def test_opencode_tool_preserves_stdout_on_nonzero_exit() -> None:
+    text = TOOL_SOURCE.read_text(encoding="utf-8")
+
+    assert "if (code !== 0)" in text
+    assert "const output = stdout.trim();" in text
+    assert 'if (args.includes("--json") && output)' in text
+    assert "resolve(output);" in text
+    assert (
+        "reject(new Error(stderr.trim() || `lane exited with code ${code}`));"
+        in text
+    )

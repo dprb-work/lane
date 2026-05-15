@@ -129,9 +129,15 @@ lane cleanup
 
 `lane status` prints stored lane state followed by read-only health facts:
 worktree cleanliness, current `HEAD`, upstream branch, verification freshness,
-active vs archived spec state, and PR/MR state when a PR URL is known. These
-facts are intentionally not written back to `.lane/state.yaml`; future sync
+active vs archived spec state, and PR/MR state when a PR URL is known. Pass
+`--json` to print the same stored state and health facts as structured JSON.
+These facts are intentionally not written back to `.lane/state.yaml`; future sync
 commands can use the same reality checks when state mutation is needed.
+
+Structured JSON output is also available for commands whose result already has a
+compact lifecycle shape: `lane list --json`, `lane doctor --json`,
+`lane verify --json`, `lane sync --json`, `lane review --json`,
+`lane push --json`, and `lane finalize --json`.
 
 `lane sync [selector]` refreshes stored lane state from external reality without
 publishing, reviewing, finalizing, or cleaning up. It discovers an existing

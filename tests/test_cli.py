@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from lane import cli
@@ -7,6 +8,7 @@ from lane.doctor import Diagnostic
 from lane.forge import ForgeResult
 from lane.openspec import OpenSpecError
 from lane.paseo import PaseoArchiveResult, PaseoWorktree
+from lane.review import ReviewResult, ReviewRun
 from lane.run import LaneCommandResult
 from lane.state import LaneState, VerificationState, read_state, write_state
 from lane.status import StatusHealth
@@ -481,6 +483,31 @@ def test_doctor_prints_diagnostics_and_returns_failure(
     )
 
 
+def test_doctor_json_prints_diagnostics(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "run_doctor",
+        lambda path: (
+            Diagnostic("ok", "git", "/bin/git"),
+            Diagnostic("fail", "paseo", "not found on PATH"),
+        ),
+    )
+
+    assert cli.main(["doctor", "--json", str(tmp_path)]) == 1
+
+    assert json.loads(capsys.readouterr().out) == {
+        "diagnostics": [
+            {"status": "ok", "name": "git", "detail": "/bin/git"},
+            {"status": "fail", "name": "paseo", "detail": "not found on PATH"},
+        ],
+        "has_failures": True,
+    }
+
+
 def test_status_prints_health_fields(
     tmp_path: Path,
     monkeypatch,
@@ -511,6 +538,68 @@ def test_status_prints_health_fields(
     assert "health.verification: missing" in output
     assert "health.spec: active" in output
     assert "health.pr: none" in output
+
+
+def test_status_json_prints_state_and_health(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(
+        workspace,
+        branch="fix/login",
+        verification=VerificationState(
+            command="just verify",
+            exit_status=0,
+            head="abc123",
+            verified_at="2026-05-15T00:00:00+00:00",
+        ),
+    )
+    write_state(workspace, state)
+    monkeypatch.setattr(
+        cli,
+        "collect_status_health",
+        lambda state: StatusHealth(
+            worktree="clean",
+            head="abc123",
+            upstream="upstream/fix/login",
+            verification="fresh (just verify)",
+            spec="active",
+            pr="none",
+        ),
+    )
+
+    assert cli.main(["status", "--json", str(workspace)]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "state": {
+            "schema": 1,
+            "id": "login",
+            "status": "active",
+            "branch": "fix/login",
+            "base": "main",
+            "path": str(workspace),
+            "spec": "login",
+            "review": "none",
+            "pr": None,
+            "verification": {
+                "command": "just verify",
+                "exit_status": 0,
+                "head": "abc123",
+                "verified_at": "2026-05-15T00:00:00+00:00",
+            },
+        },
+        "health": {
+            "worktree": "clean",
+            "head": "abc123",
+            "upstream": "upstream/fix/login",
+            "verification": "fresh (just verify)",
+            "spec": "active",
+            "pr": "none",
+        },
+    }
 
 
 def test_status_resolves_slug_from_known_lanes(
@@ -861,6 +950,61 @@ def test_list_skips_worktrees_without_lane_state(
     assert capsys.readouterr().out == "ID  STATUS  BRANCH  REVIEW  PR  PATH\n"
 
 
+def test_list_json_prints_known_lanes(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    write_state(first, _state(first, branch="fix/login"))
+    write_state(
+        second,
+        _state(
+            second,
+            branch="feat/dashboard",
+            pr="https://github.com/acme/app/pull/123",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "list_worktrees",
+        lambda **_: [
+            PaseoWorktree(name="dashboard", branch="feat/dashboard", path=second),
+            PaseoWorktree(name="login", branch="fix/login", path=first),
+        ],
+    )
+
+    assert cli.main(["list", "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "lanes": [
+            {
+                "schema": 1,
+                "id": "dashboard",
+                "status": "active",
+                "branch": "feat/dashboard",
+                "base": "main",
+                "path": str(second),
+                "spec": "dashboard",
+                "review": "none",
+                "pr": "https://github.com/acme/app/pull/123",
+            },
+            {
+                "schema": 1,
+                "id": "login",
+                "status": "active",
+                "branch": "fix/login",
+                "base": "main",
+                "path": str(first),
+                "spec": "login",
+                "review": "none",
+                "pr": None,
+            },
+        ]
+    }
+
+
 def test_finalize_refuses_active_spec(
     tmp_path: Path,
     monkeypatch,
@@ -913,6 +1057,54 @@ def test_finalize_updates_state_with_pr_url(
     assert updated.pr == "https://github.com/acme/app/pull/123"
     assert updated.verification is not None
     assert updated.verification.head == "abc123"
+
+
+def test_finalize_json_prints_result(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=0,
+            summary="ok",
+        ),
+    )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: "acme/app",
+    )
+    monkeypatch.setattr(
+        cli,
+        "finalize_pr",
+        lambda state, verification: ForgeResult(
+            repo="acme/app",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
+
+    assert cli.main(["finalize", "--json"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["repo"] == "acme/app"
+    assert output["pr"] == "https://github.com/acme/app/pull/123"
+    assert output["state"]["status"] == "finalized"
+    assert output["state"]["pr"] == "https://github.com/acme/app/pull/123"
+    assert output["verification"] == {
+        "command": {"argv": ["just", "verify"], "label": "just verify"},
+        "exit_status": 0,
+        "summary": "ok",
+    }
 
 
 def test_finalize_prints_failed_verification_details(
@@ -981,6 +1173,37 @@ def test_verify_records_successful_freshness(
     assert updated.verification.head == "abc123"
 
 
+def test_verify_json_prints_result_and_state(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=0,
+            summary="ok",
+        ),
+    )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+
+    assert cli.main(["verify", "--json"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["state"]["verification"]["head"] == "abc123"
+    assert output["verification"] == {
+        "command": {"argv": ["just", "verify"], "label": "just verify"},
+        "exit_status": 0,
+        "summary": "ok",
+    }
+
+
 def test_verify_does_not_record_failed_freshness(
     tmp_path: Path,
     monkeypatch,
@@ -1035,6 +1258,49 @@ def test_run_requires_command_after_separator(tmp_path: Path, monkeypatch) -> No
     assert cli.main(["run", "--"]) == 2
 
 
+def test_review_json_prints_result_and_updates_state(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_review",
+        lambda workspace, **kwargs: ReviewResult(
+            review="comment",
+            missing_agents=("lane-review-security",),
+            runs=(
+                ReviewRun(
+                    agent="lane-review-quality",
+                    paseo_agent_id="agent-1",
+                    exit_status=0,
+                    output="Verdict: comment",
+                ),
+            ),
+        ),
+    )
+
+    assert cli.main(["review", "--json"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["review"] == "comment"
+    assert output["state"]["review"] == "comment"
+    assert output["missing_agents"] == ["lane-review-security"]
+    assert output["runs"] == [
+        {
+            "agent": "lane-review-quality",
+            "paseo_agent_id": "agent-1",
+            "exit_status": 0,
+            "output": "Verdict: comment",
+        }
+    ]
+    assert read_state(tmp_path).review == "comment"
+
+
 def test_push_runs_verification_before_pushing(
     tmp_path: Path,
     monkeypatch,
@@ -1067,6 +1333,40 @@ def test_push_runs_verification_before_pushing(
 
     assert pushed == [("fix/login", False)]
     assert read_state(tmp_path).verification is not None
+
+
+def test_push_json_prints_result(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: VerifyResult(
+            command=VerifyCommand(argv=["just", "verify"], label="just verify"),
+            exit_status=0,
+            summary="ok",
+        ),
+    )
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease: "acme/app",
+    )
+
+    assert cli.main(["push", "--json"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["repo"] == "acme/app"
+    assert output["pushed"] == "fix/login"
+    assert output["state"]["verification"]["head"] == "abc123"
+    assert output["verification"]["exit_status"] == 0
 
 
 def test_push_prints_failed_verification_details(
@@ -1130,6 +1430,42 @@ def test_sync_writes_refreshed_state_and_prints_changes(
     assert "changes:\n- pr: https://github.com/acme/app/pull/123" in output
     assert "- status: merged" in output
     assert "warnings:\n- review state unavailable" in output
+
+
+def test_sync_json_prints_refreshed_state_and_changes(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    write_state(tmp_path, state)
+
+    def fake_sync(state: LaneState) -> SyncResult:
+        return SyncResult(
+            state=LaneState(
+                **{
+                    **state.__dict__,
+                    "status": "merged",
+                    "pr": "https://github.com/acme/app/pull/123",
+                }
+            ),
+            changes=("pr: https://github.com/acme/app/pull/123", "status: merged"),
+            warnings=("review state unavailable",),
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "sync_lane_state", fake_sync)
+
+    assert cli.main(["sync", "--json"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["state"]["status"] == "merged"
+    assert output["state"]["pr"] == "https://github.com/acme/app/pull/123"
+    assert output["changes"] == [
+        "pr: https://github.com/acme/app/pull/123",
+        "status: merged",
+    ]
+    assert output["warnings"] == ["review state unavailable"]
 
 
 def test_push_no_verify_requires_fresh_verification(
