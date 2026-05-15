@@ -336,6 +336,7 @@ def handle_finalize(args: argparse.Namespace) -> int:
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
         print("verification failed; refusing to finalize", file=sys.stderr)
+        _print_verification_result(verification)
         return verification.exit_status
     push_branch(state, force_with_lease=args.force_with_lease)
     result = finalize_pr(state, verification)
@@ -350,6 +351,7 @@ def handle_push(args: argparse.Namespace) -> int:
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
         print("verification failed; refusing to push", file=sys.stderr)
+        _print_verification_result(verification)
         return verification.exit_status
     repo = push_branch(state, force_with_lease=args.force_with_lease)
     print(f"repo: {repo}")
@@ -364,10 +366,7 @@ def handle_verify(args: argparse.Namespace) -> int:
         head = current_head(state.path)
         state = replace(state, verification=verification_state(result, head))
         write_state(state.path, state)
-    print(f"command: {result.command.label}")
-    print(f"exit status: {result.exit_status}")
-    print("summary:")
-    print(result.summary)
+    _print_verification_result(result)
     return result.exit_status
 
 
@@ -472,6 +471,13 @@ def _print_status_health(state: LaneState) -> None:
     print(f"health.verification: {health.verification}")
     print(f"health.spec: {health.spec}")
     print(f"health.pr: {health.pr}")
+
+
+def _print_verification_result(result: VerifyResult) -> None:
+    print(f"command: {result.command.label}")
+    print(f"exit status: {result.exit_status}")
+    print("summary:")
+    print(result.summary)
 
 
 def _print_lane_table(lanes: list[LaneState]) -> None:
