@@ -359,7 +359,7 @@ def _commit_initial_lane_state(state: LaneState) -> None:
         message = result.stderr.strip() or result.stdout.strip() or "git add failed"
         raise ForgeError(f"initial lane commit failed: {message}")
     result = subprocess.run(
-        ["git", "commit", "-m", f"task: start {state.id}"],
+        ["git", "commit", "-m", f"chore: start {state.id}"],
         cwd=state.path,
         check=False,
         text=True,

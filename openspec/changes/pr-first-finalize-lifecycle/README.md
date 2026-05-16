@@ -146,6 +146,8 @@ lane state.
 - [x] Design shared PR/MR body template generation for start, push, and finalize.
 - [ ] Design optional review-summary comment template generation for `lane
   review`.
+- [ ] Design configurable generated Conventional Commit aliases for future
+  tool-owned commits.
 - [x] Update `lane start` to create or attach a draft PR/MR and store its URL.
 - [x] Update `lane start` to commit initial spec files before opening the draft
   PR/MR.

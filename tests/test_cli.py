@@ -122,7 +122,7 @@ def test_commit_initial_lane_state_commits_spec_files(
 
     assert calls == [
         (["git", "add", "openspec/changes"], tmp_path),
-        (["git", "commit", "-m", "task: start login"], tmp_path),
+        (["git", "commit", "-m", "chore: start login"], tmp_path),
     ]
 
 
