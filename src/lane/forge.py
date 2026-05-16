@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from lane.forge_remote import ForgeRemote, ForgeRemoteError, infer_forge_remote
+from lane.forge_remote import (
+    ForgeRemote,
+    ForgeRemoteError,
+    infer_forge_remote,
+    parse_gitlab_mr_url,
+    provider_from_pr_url,
+)
 from lane.github_remote import GitHubRemoteError, infer_github_remote
 from lane.state import LaneState
 from lane.verify import VerifyResult
@@ -60,6 +66,101 @@ def finalize_pr(
     raise ForgeError(f"unsupported forge provider: {remote.provider}")
 
 
+def create_draft_pr(
+    state: LaneState,
+    *,
+    runner: Runner | None = None,
+) -> ForgeResult:
+    runner = _run if runner is None else runner
+    try:
+        remote = infer_forge_remote(state.path, runner=runner)
+    except ForgeRemoteError as error:
+        raise ForgeError(str(error)) from error
+    if remote.provider == "github":
+        _require_tool("gh", purpose="GitHub draft PR creation")
+        return _create_github_pr(state, None, remote, runner, draft=True)
+    if remote.provider == "gitlab":
+        _require_tool("glab", purpose="GitLab draft MR creation")
+        return _create_gitlab_mr(state, None, remote, runner, draft=True)
+    raise ForgeError(f"unsupported forge provider: {remote.provider}")
+
+
+def update_pr_metadata(
+    state: LaneState,
+    verification: VerifyResult | None = None,
+    *,
+    runner: Runner | None = None,
+) -> str | None:
+    if state.pr is None:
+        return None
+    runner = _run if runner is None else runner
+    try:
+        provider = provider_from_pr_url(state.pr)
+    except ForgeRemoteError as error:
+        raise ForgeError(str(error)) from error
+    title = _pr_title(state.branch, state.id)
+    body = pr_body(state, verification)
+    if provider == "github":
+        _require_tool("gh", purpose="GitHub PR metadata update")
+        _run_required(
+            ["gh", "pr", "edit", state.pr, "--title", title, "--body", body],
+            state.path,
+            runner,
+        )
+    else:
+        _require_tool("glab", purpose="GitLab MR metadata update")
+        mr = _gitlab_mr(state.pr)
+        title = _preserve_gitlab_draft_prefix(
+            title,
+            mr.iid,
+            mr.repo_selector,
+            state.path,
+            runner,
+        )
+        _run_required(
+            [
+                "glab",
+                "mr",
+                "update",
+                mr.iid,
+                "--repo",
+                mr.repo_selector,
+                "--title",
+                title,
+                "--description",
+                body,
+                "--yes",
+            ],
+            state.path,
+            runner,
+        )
+    return state.pr
+
+
+def mark_pr_ready(
+    pr_url: str,
+    workspace: Path,
+    *,
+    runner: Runner | None = None,
+) -> None:
+    runner = _run if runner is None else runner
+    try:
+        provider = provider_from_pr_url(pr_url)
+    except ForgeRemoteError as error:
+        raise ForgeError(str(error)) from error
+    if provider == "github":
+        _require_tool("gh", purpose="GitHub PR ready transition")
+        _run_required(["gh", "pr", "ready", pr_url], workspace, runner)
+    else:
+        _require_tool("glab", purpose="GitLab MR ready transition")
+        mr = _gitlab_mr(pr_url)
+        _run_required(
+            ["glab", "mr", "update", mr.iid, "--repo", mr.repo_selector, "--ready"],
+            workspace,
+            runner,
+        )
+
+
 def _finalize_github_pr(
     state: LaneState,
     verification: VerifyResult,
@@ -68,34 +169,11 @@ def _finalize_github_pr(
 ) -> ForgeResult:
     repo = remote.repo
 
-    title = _pr_title(state.branch, state.id)
-    body = pr_body(state, verification)
     existing = _existing_pr_url(state.branch, state.path, runner)
     if existing is None:
-        create = _run_required(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--title",
-                title,
-                "--body",
-                body,
-                "--base",
-                state.base,
-                "--head",
-                state.branch,
-            ],
-            state.path,
-            runner,
-        )
-        pr_url = create.stdout.strip()
+        return _create_github_pr(state, verification, remote, runner, draft=False)
     else:
-        _run_required(
-            ["gh", "pr", "edit", state.branch, "--title", title, "--body", body],
-            state.path,
-            runner,
-        )
+        update_pr_metadata(_state_with_pr(state, existing), verification, runner=runner)
         pr_url = existing
 
     if pr_url == "":
@@ -111,45 +189,11 @@ def _finalize_gitlab_mr(
 ) -> ForgeResult:
     repo = remote.repo
 
-    title = _pr_title(state.branch, state.id)
-    body = pr_body(state, verification)
     existing = _existing_mr_url(state.branch, state.path, runner)
     if existing is None:
-        create = _run_required(
-            [
-                "glab",
-                "mr",
-                "create",
-                "--title",
-                title,
-                "--description",
-                body,
-                "--target-branch",
-                state.base,
-                "--source-branch",
-                state.branch,
-                "--yes",
-            ],
-            state.path,
-            runner,
-        )
-        mr_url = _extract_url(create.stdout)
+        return _create_gitlab_mr(state, verification, remote, runner, draft=False)
     else:
-        _run_required(
-            [
-                "glab",
-                "mr",
-                "update",
-                state.branch,
-                "--title",
-                title,
-                "--description",
-                body,
-                "--yes",
-            ],
-            state.path,
-            runner,
-        )
+        update_pr_metadata(_state_with_pr(state, existing), verification, runner=runner)
         mr_url = existing
 
     if mr_url == "":
@@ -157,14 +201,19 @@ def _finalize_gitlab_mr(
     return ForgeResult(repo=repo, pr_url=mr_url)
 
 
-def pr_body(state: LaneState, verification: VerifyResult) -> str:
+def pr_body(state: LaneState, verification: VerifyResult | None = None) -> str:
+    verification_line = (
+        "- Not verified yet."
+        if verification is None
+        else f"- `{verification.command.label}` exited {verification.exit_status}."
+    )
     return "\n".join(
         [
             "## Summary",
             f"- Lane `{state.id}` for branch `{state.branch}`.",
             "",
             "## Verification",
-            f"- `{verification.command.label}` exited {verification.exit_status}.",
+            verification_line,
             "",
             "## Review",
             f"- Aggregate review: `{state.review}`.",
@@ -176,6 +225,93 @@ def pr_body(state: LaneState, verification: VerifyResult) -> str:
             f"- `{state.path}`",
         ]
     )
+
+
+def _create_github_pr(
+    state: LaneState,
+    verification: VerifyResult | None,
+    remote: ForgeRemote,
+    runner: Runner,
+    *,
+    draft: bool,
+) -> ForgeResult:
+    argv = [
+        "gh",
+        "pr",
+        "create",
+        "--title",
+        _pr_title(state.branch, state.id),
+        "--body",
+        pr_body(state, verification),
+        "--base",
+        state.base,
+        "--head",
+        state.branch,
+    ]
+    if draft:
+        argv.append("--draft")
+    create = _run_required(argv, state.path, runner)
+    pr_url = create.stdout.strip()
+    if pr_url == "":
+        raise ForgeError("gh did not return a PR URL")
+    return ForgeResult(repo=remote.repo, pr_url=pr_url)
+
+
+def _create_gitlab_mr(
+    state: LaneState,
+    verification: VerifyResult | None,
+    remote: ForgeRemote,
+    runner: Runner,
+    *,
+    draft: bool,
+) -> ForgeResult:
+    title = _pr_title(state.branch, state.id)
+    if draft:
+        title = f"Draft: {title}"
+    create = _run_required(
+        [
+            "glab",
+            "mr",
+            "create",
+            "--title",
+            title,
+            "--description",
+            pr_body(state, verification),
+            "--target-branch",
+            state.base,
+            "--source-branch",
+            state.branch,
+            "--yes",
+        ],
+        state.path,
+        runner,
+    )
+    mr_url = _extract_url(create.stdout)
+    if mr_url == "":
+        raise ForgeError("glab did not return an MR URL")
+    return ForgeResult(repo=remote.repo, pr_url=mr_url)
+
+
+def _state_with_pr(state: LaneState, pr_url: str) -> LaneState:
+    return LaneState(
+        schema=state.schema,
+        id=state.id,
+        status=state.status,
+        branch=state.branch,
+        base=state.base,
+        path=state.path,
+        spec=state.spec,
+        review=state.review,
+        pr=pr_url,
+        verification=state.verification,
+    )
+
+
+def _gitlab_mr(pr_url: str):
+    try:
+        return parse_gitlab_mr_url(pr_url)
+    except ForgeRemoteError as error:
+        raise ForgeError(str(error)) from error
 
 
 def _existing_pr_url(branch: str, cwd: Path, runner: Runner) -> str | None:
@@ -196,6 +332,42 @@ def _existing_mr_url(branch: str, cwd: Path, runner: Runner) -> str | None:
         return None
     url = raw.get("web_url") or raw.get("webUrl") or raw.get("url")
     return url if isinstance(url, str) and url else None
+
+
+def _preserve_gitlab_draft_prefix(
+    title: str,
+    iid: str,
+    repo_selector: str,
+    cwd: Path,
+    runner: Runner,
+) -> str:
+    existing = _gitlab_mr_title(iid, repo_selector, cwd, runner)
+    if existing is None:
+        return title
+    for prefix in ("Draft:", "WIP:"):
+        if existing.lower().startswith(prefix.lower()):
+            return f"{prefix} {title}"
+    return title
+
+
+def _gitlab_mr_title(
+    iid: str,
+    repo_selector: str,
+    cwd: Path,
+    runner: Runner,
+) -> str | None:
+    result = runner(
+        ["glab", "mr", "view", iid, "--repo", repo_selector, "--output", "json"],
+        cwd,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    title = raw.get("title")
+    return title if isinstance(title, str) else None
 
 
 def _extract_url(output: str) -> str:

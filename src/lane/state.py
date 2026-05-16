@@ -37,6 +37,7 @@ class LaneState:
     review: ReviewStatus
     pr: str | None
     verification: VerificationState | None = None
+    review_head: str | None = None
 
 
 def state_path(workspace: Path) -> Path:
@@ -55,6 +56,8 @@ def state_to_dict(state: LaneState) -> dict[str, object]:
         "review": state.review,
         "pr": state.pr,
     }
+    if state.review_head is not None:
+        raw["review_head"] = state.review_head
     if state.verification is not None:
         raw["verification"] = {
             "command": state.verification.command,
@@ -85,6 +88,10 @@ def validate_state(raw: Any) -> LaneState:
     if pr is not None and not isinstance(pr, str):
         raise ValueError("pr must be a string or null")
 
+    review_head = raw.get("review_head")
+    if review_head is not None and not isinstance(review_head, str):
+        raise ValueError("review_head must be a string or null")
+
     verification = _optional_verification(raw.get("verification"))
 
     return LaneState(
@@ -98,6 +105,7 @@ def validate_state(raw: Any) -> LaneState:
         review=review,  # type: ignore[arg-type]
         pr=pr,
         verification=verification,
+        review_head=review_head,
     )
 
 
