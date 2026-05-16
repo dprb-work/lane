@@ -24,6 +24,8 @@ In scope:
 
 - Write an ignored JSON summary after cleanup gates pass and before `lane cleanup`
   asks Paseo to archive the workspace.
+- Store the summary outside the lane workspace when cleanup is invoked from
+  inside the workspace that Paseo will remove.
 - Preserve lane id, branch, PR URL, merge status, archived spec id, source path,
   archive status, and removed Paseo agents.
 - Leave a `pending` summary behind when Paseo archive fails after cleanup gates

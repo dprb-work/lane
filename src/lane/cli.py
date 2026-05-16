@@ -10,6 +10,7 @@ from lane import __version__
 from lane.branches import parse_branch
 from lane.cleanup import (
     CleanupError,
+    cleanup_archive_root,
     close_pr,
     delete_remote_branch,
     ensure_clean_worktree,
@@ -390,8 +391,9 @@ def handle_cleanup(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
     ensure_pr_merged(state.pr, state.path)
+    archive_root = cleanup_archive_root(Path.cwd(), state.path)
     summary_path = write_cleanup_archive_summary(
-        Path.cwd(),
+        archive_root,
         state,
         merge_status="merged",
         archive_status="pending",
@@ -402,7 +404,7 @@ def handle_cleanup(args: argparse.Namespace) -> int:
         delete_remote_branch(state.branch, state.path)
     result = archive_worktree(state.id)
     summary_path = write_cleanup_archive_summary(
-        Path.cwd(),
+        archive_root,
         state,
         merge_status="merged",
         archive_status="archived",

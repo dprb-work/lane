@@ -64,6 +64,14 @@ def write_cleanup_archive_summary(
     return path
 
 
+def cleanup_archive_root(invocation: Path, workspace: Path) -> Path:
+    invocation = invocation.resolve()
+    workspace = workspace.resolve()
+    if invocation == workspace or workspace in invocation.parents:
+        return workspace.parent
+    return invocation
+
+
 def ensure_clean_worktree(
     workspace: Path,
     *,

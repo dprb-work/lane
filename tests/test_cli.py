@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from lane import cli
@@ -361,19 +362,20 @@ def test_cleanup_archives_resolved_lane_worktree_name(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    workspace = tmp_path / "workspace"
     state = _state(
-        tmp_path,
+        workspace,
         branch="fix/login",
         pr="https://github.com/acme/app/pull/123",
     )
-    write_state(tmp_path, state)
+    write_state(workspace, state)
     calls: list[str] = []
 
     def fake_archive_worktree(name: str) -> PaseoArchiveResult:
         calls.append(name)
         return PaseoArchiveResult(name="login", removed_agents=("agent-1",))
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(workspace)
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
     monkeypatch.setattr(cli, "ensure_pr_merged", lambda pr_url, workspace: None)
 
@@ -384,7 +386,7 @@ def test_cleanup_archives_resolved_lane_worktree_name(
         "id": "login",
         "branch": "fix/login",
         "base": "main",
-        "path": str(tmp_path),
+        "path": str(workspace),
         "status": "active",
         "review": "none",
         "pr": "https://github.com/acme/app/pull/123",
@@ -397,21 +399,51 @@ def test_cleanup_archives_resolved_lane_worktree_name(
     }
 
 
+def test_cleanup_from_workspace_keeps_summary_after_workspace_removed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state = _state(
+        workspace,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+    )
+    write_state(workspace, state)
+
+    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+        shutil.rmtree(workspace)
+        return PaseoArchiveResult(name=name, removed_agents=("agent-1",))
+
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+    monkeypatch.setattr(cli, "ensure_pr_merged", lambda pr_url, workspace: None)
+
+    assert cli.main(["cleanup"]) == 0
+    summary = json.loads((tmp_path / ".lane" / "archive" / "login.json").read_text())
+    assert summary["lane"]["path"] == str(workspace)
+    assert summary["archive"] == {
+        "status": "archived",
+        "removed_agents": ["agent-1"],
+    }
+
+
 def test_cleanup_archive_failure_keeps_pending_summary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    workspace = tmp_path / "workspace"
     state = _state(
-        tmp_path,
+        workspace,
         branch="fix/login",
         pr="https://github.com/acme/app/pull/123",
     )
-    write_state(tmp_path, state)
+    write_state(workspace, state)
 
     def fake_archive_worktree(name: str) -> PaseoArchiveResult:
         raise PaseoError(f"archive failed for {name}")
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(workspace)
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
     monkeypatch.setattr(cli, "ensure_pr_merged", lambda pr_url, workspace: None)
 
