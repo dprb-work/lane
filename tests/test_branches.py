@@ -13,12 +13,10 @@ from lane.branches import parse_branch
         "ci",
         "docs",
         "fix",
-        "hotfix",
         "perf",
         "refactor",
         "revert",
         "style",
-        "task",
         "test",
     ],
 )
@@ -37,7 +35,10 @@ def test_parse_branch_infers_spec_driven_schema() -> None:
     assert branch.spec_schema == "spec-driven"
 
 
-@pytest.mark.parametrize("branch", ["fix", "Fix/login", "unknown/login", "fix/"])
+@pytest.mark.parametrize(
+    "branch",
+    ["fix", "Fix/login", "unknown/login", "hotfix/login", "task/login", "fix/"],
+)
 def test_parse_branch_rejects_invalid_branch(branch: str) -> None:
     with pytest.raises(ValueError):
         parse_branch(branch)

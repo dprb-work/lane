@@ -10,12 +10,10 @@ SUPPORTED_BRANCH_TYPES = {
     "docs": "lane-lite",
     "feat": "spec-driven",
     "fix": "lane-lite",
-    "hotfix": "lane-lite",
     "perf": "lane-lite",
     "refactor": "lane-lite",
     "revert": "lane-lite",
     "style": "lane-lite",
-    "task": "lane-lite",
     "test": "lane-lite",
 }
 
