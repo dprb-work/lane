@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -12,6 +13,7 @@ from lane.forge_remote import (
     parse_gitlab_mr_url,
     provider_from_pr_url,
 )
+from lane.state import LaneState
 
 
 class CleanupError(RuntimeError):
@@ -25,6 +27,49 @@ class Runner(Protocol):
         cwd: Path,
     ) -> subprocess.CompletedProcess[str]:
         pass
+
+
+def write_cleanup_archive_summary(
+    root: Path,
+    state: LaneState,
+    *,
+    merge_status: str,
+    archive_status: str,
+    removed_agents: tuple[str, ...] = (),
+) -> Path:
+    path = root / ".lane" / "archive" / f"{_safe_filename(state.id)}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = {
+        "schema": 1,
+        "written_at": datetime.now(UTC).isoformat(),
+        "lane": {
+            "id": state.id,
+            "branch": state.branch,
+            "base": state.base,
+            "path": str(state.path),
+            "status": state.status,
+            "review": state.review,
+            "pr": state.pr,
+        },
+        "archived_spec": state.spec,
+        "merge_status": merge_status,
+        "archive": {
+            "status": archive_status,
+            "removed_agents": list(removed_agents),
+        },
+    }
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(raw, handle, indent=2)
+        handle.write("\n")
+    return path
+
+
+def cleanup_archive_root(invocation: Path, workspace: Path) -> Path:
+    invocation = invocation.resolve()
+    workspace = workspace.resolve()
+    if invocation == workspace or workspace in invocation.parents:
+        return workspace.parent
+    return invocation
 
 
 def ensure_clean_worktree(
@@ -160,6 +205,13 @@ def _gitlab_mr(pr_url: str):
         return parse_gitlab_mr_url(pr_url)
     except ForgeRemoteError as error:
         raise CleanupError(str(error)) from error
+
+
+def _safe_filename(value: str) -> str:
+    return "".join(
+        character if character.isalnum() or character in "._-" else "-"
+        for character in value
+    )
 
 
 def _require_tool(tool: str, *, purpose: str | None = None) -> None:

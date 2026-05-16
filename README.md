@@ -216,7 +216,14 @@ GitHub PR or GitLab MR, stores the PR/MR URL, and marks the lane `finalized`.
 lifecycle.
 
 `lane cleanup` refuses active specs and unmerged PRs before calling Paseo archive.
-Remote branch deletion requires `--delete-remote-branch` and a merged PR.
+After those gates pass, it writes `.lane/archive/<lane-id>.json` under the
+invoking checkout, or under the lane workspace parent when cleanup is invoked
+from inside the workspace that Paseo will remove. The summary includes the lane
+id, branch, PR URL, merge status, archived spec id, source path, archive status,
+and removed Paseo agents. It is first written with archive status `pending`, then
+updated to `archived` after Paseo archive succeeds; a failed archive leaves the
+pending summary behind as a local diagnostic receipt. Remote branch deletion
+requires `--delete-remote-branch` and a merged PR.
 
 `lane abort` refuses dirty worktrees unless `--discard` is passed. Closing the PR
 and deleting the remote branch require explicit `--close-pr` and
