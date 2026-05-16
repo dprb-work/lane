@@ -20,7 +20,7 @@ fallback workflows unless explicitly requested.
 ## GitHub Setup
 
 - Repository: `dprb-work/lane`.
-- Remote: `upstream` at `https://github.com/dprb-work/lane.git`.
+- Remote: `origin` at `https://github.com/dprb-work/lane.git`.
 - Default branch: `main`; this repo uses direct feature PRs into `main`.
 - Merge policy: squash merge only; merge commits and GitHub rebase merges are
   disabled; delete branch on merge is enabled.
