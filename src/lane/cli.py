@@ -14,6 +14,7 @@ from lane.cleanup import (
     delete_remote_branch,
     ensure_clean_worktree,
     ensure_pr_merged,
+    write_cleanup_archive_summary,
 )
 from lane.doctor import Diagnostic, has_failures, run_doctor
 from lane.forge import ForgeError, finalize_pr, push_branch
@@ -389,12 +390,26 @@ def handle_cleanup(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
     ensure_pr_merged(state.pr, state.path)
+    summary_path = write_cleanup_archive_summary(
+        Path.cwd(),
+        state,
+        merge_status="merged",
+        archive_status="pending",
+    )
     if args.delete_remote_branch:
         if state.pr is None:
             raise CleanupError("remote branch deletion requires a merged PR")
         delete_remote_branch(state.branch, state.path)
     result = archive_worktree(state.id)
+    summary_path = write_cleanup_archive_summary(
+        Path.cwd(),
+        state,
+        merge_status="merged",
+        archive_status="archived",
+        removed_agents=result.removed_agents,
+    )
     print(f"archived: {result.name}")
+    print(f"archive summary: {summary_path}")
     return 0
 
 

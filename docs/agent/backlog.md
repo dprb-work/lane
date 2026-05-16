@@ -15,9 +15,6 @@ OpenSpec changes.
   and completed tasks.
 - Extend `lane sync` to refresh additional external reality such as review state,
   branch/base drift, and spec status after those sources have stable APIs.
-- Durable cleanup/archive summary before Paseo archive removes the workspace,
-  preserving lane id, branch, PR URL, merge status, archived spec id, and removed
-  agents.
 - Review readiness gate for finalize, optionally refusing PR/MR handoff unless
   review is `approve` or explicitly allowed.
 - `lane list` filtering, such as status, review outcome, base branch, and stale
