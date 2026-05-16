@@ -18,7 +18,14 @@ from lane.cleanup import (
     write_cleanup_archive_summary,
 )
 from lane.doctor import Diagnostic, has_failures, run_doctor
-from lane.forge import ForgeError, finalize_pr, push_branch
+from lane.forge import (
+    ForgeError,
+    create_draft_pr,
+    finalize_pr,
+    mark_pr_ready,
+    push_branch,
+    update_pr_metadata,
+)
 from lane.init import (
     InitError,
     compact_opencode_registration_note,
@@ -324,6 +331,16 @@ def handle_start(args: argparse.Namespace) -> int:
             ) from error
         raise
     write_state(worktree.path, state)
+    try:
+        repo = push_branch(state)
+        result = create_draft_pr(state)
+    except ForgeError as error:
+        print(f"warning: draft PR not created: {error}", file=sys.stderr)
+    else:
+        state = replace(state, pr=result.pr_url)
+        write_state(worktree.path, state)
+        print(f"repo: {repo}")
+        print(f"draft pr: {result.pr_url}")
     _print_state(state)
     return 0
 
@@ -430,6 +447,8 @@ def handle_abort(args: argparse.Namespace) -> int:
 def handle_finalize(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
+    if state.review != "approve":
+        raise ForgeError("finalize requires approved agent review; run `lane review`")
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
         if args.json:
@@ -446,6 +465,7 @@ def handle_finalize(args: argparse.Namespace) -> int:
         return verification.exit_status
     push_branch(state, force_with_lease=args.force_with_lease)
     result = finalize_pr(state, verification)
+    mark_pr_ready(result.pr_url, state.path)
     state = replace(state, status="finalized", pr=result.pr_url)
     write_state(state.path, state)
     if args.json:
@@ -480,6 +500,7 @@ def handle_push(args: argparse.Namespace) -> int:
         _print_verification_result(verification)
         return verification.exit_status
     repo = push_branch(state, force_with_lease=args.force_with_lease)
+    update_pr_metadata(state, verification)
     if args.json:
         _print_json(
             {

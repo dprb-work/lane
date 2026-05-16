@@ -837,6 +837,23 @@ def test_finalize_materialized_remote_lane_does_not_recreate_archived_spec(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+
+    def fake_resolve_lane(selector: str | None) -> LaneState:
+        state = LaneState(
+            schema=1,
+            id="login-review",
+            status="active",
+            branch="fix/login",
+            base="main",
+            path=workspace,
+            spec="login",
+            review="approve",
+            pr="https://github.com/acme/app/pull/123",
+        )
+        write_state(workspace, state)
+        return state
+
+    monkeypatch.setattr(cli, "_resolve_lane", fake_resolve_lane)
     monkeypatch.setattr(
         cli,
         "run_verify",
@@ -860,6 +877,7 @@ def test_finalize_materialized_remote_lane_does_not_recreate_archived_spec(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+    monkeypatch.setattr(cli, "mark_pr_ready", lambda pr_url, workspace: None)
 
     assert cli.main(["finalize", "#123"]) == 0
 
@@ -1085,7 +1103,7 @@ def test_finalize_refuses_active_spec(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(tmp_path, branch="fix/login", review="approve")
     write_state(tmp_path, state)
     (tmp_path / "openspec" / "changes" / state.spec).mkdir(parents=True)
 
@@ -1098,7 +1116,7 @@ def test_finalize_updates_state_with_pr_url(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(tmp_path, branch="fix/login", review="approve")
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
@@ -1126,6 +1144,7 @@ def test_finalize_updates_state_with_pr_url(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+    monkeypatch.setattr(cli, "mark_pr_ready", lambda pr_url, workspace: None)
 
     assert cli.main(["finalize"]) == 0
     updated = read_state(tmp_path)
@@ -1140,7 +1159,7 @@ def test_finalize_json_prints_result(
     monkeypatch,
     capsys,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(tmp_path, branch="fix/login", review="approve")
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
@@ -1168,6 +1187,7 @@ def test_finalize_json_prints_result(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+    monkeypatch.setattr(cli, "mark_pr_ready", lambda pr_url, workspace: None)
 
     assert cli.main(["finalize", "--json"]) == 0
 
@@ -1188,7 +1208,12 @@ def test_finalize_prints_failed_verification_details(
     monkeypatch,
     capsys,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+        review="approve",
+    )
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
@@ -1220,6 +1245,24 @@ def test_finalize_prints_failed_verification_details(
     assert "command: npm run verify" in captured.out
     assert "exit status: 127" in captured.out
     assert "summary:\nsh: 1: ruff: not found" in captured.out
+
+
+def test_finalize_refuses_unapproved_agent_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login", review="comment")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: (_ for _ in ()).throw(AssertionError("should not verify")),
+    )
+
+    assert cli.main(["finalize"]) == 2
 
 
 def test_verify_records_successful_freshness(
@@ -1381,9 +1424,14 @@ def test_push_runs_verification_before_pushing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+    )
     write_state(tmp_path, state)
     pushed: list[tuple[str, bool]] = []
+    metadata_updates: list[str | None] = []
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -1404,10 +1452,16 @@ def test_push_runs_verification_before_pushing(
         )
         or "acme/app",
     )
+    monkeypatch.setattr(
+        cli,
+        "update_pr_metadata",
+        lambda state, verification: metadata_updates.append(state.pr),
+    )
 
     assert cli.main(["push"]) == 0
 
     assert pushed == [("fix/login", False)]
+    assert metadata_updates == ["https://github.com/acme/app/pull/123"]
     assert read_state(tmp_path).verification is not None
 
 
@@ -1604,6 +1658,7 @@ def _state(
     *,
     branch: str,
     pr: str | None = None,
+    review: str = "none",
     verification: VerificationState | None = None,
 ) -> LaneState:
     lane_id = branch.split("/", maxsplit=1)[1]
@@ -1615,7 +1670,7 @@ def _state(
         base="main",
         path=path,
         spec=lane_id,
-        review="none",
+        review=review,  # type: ignore[arg-type]
         pr=pr,
         verification=verification,
     )

@@ -5,7 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from lane.forge import ForgeError, finalize_pr, infer_github_repo, pr_body, push_branch
+from lane.forge import (
+    ForgeError,
+    create_draft_pr,
+    finalize_pr,
+    infer_github_repo,
+    mark_pr_ready,
+    pr_body,
+    push_branch,
+    update_pr_metadata,
+)
 from lane.forge_remote import infer_forge_remote, parse_forge_remote_url
 from lane.state import LaneState
 from lane.verify import VerifyCommand, VerifyResult
@@ -86,6 +95,29 @@ def test_finalize_pr_creates_pr(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.pr_url == "https://github.com/acme/app/pull/123"
     assert any(call[:3] == ["gh", "pr", "create"] for call in calls)
+    assert not any("--draft" in call for call in calls)
+
+
+def test_create_draft_pr_uses_github_draft_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("upstream\thttps://github.com/acme/app.git (fetch)\n")
+        if argv[:3] == ["gh", "pr", "create"]:
+            return _result("https://github.com/acme/app/pull/123\n")
+        return _result("")
+
+    result = create_draft_pr(_state(), runner=runner)
+
+    assert result.pr_url == "https://github.com/acme/app/pull/123"
+    create = next(call for call in calls if call[:3] == ["gh", "pr", "create"])
+    assert "--draft" in create
+    assert any("Not verified yet" in argument for argument in create)
 
 
 def test_finalize_pr_updates_existing_pr(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,6 +138,33 @@ def test_finalize_pr_updates_existing_pr(monkeypatch: pytest.MonkeyPatch) -> Non
     assert any(call[:3] == ["gh", "pr", "edit"] for call in calls)
 
 
+def test_update_pr_metadata_edits_known_github_pr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result("")
+
+    state = _state(pr="https://github.com/acme/app/pull/123")
+
+    assert update_pr_metadata(state, _verification(), runner=runner) == state.pr
+    assert calls == [
+        [
+            "gh",
+            "pr",
+            "edit",
+            "https://github.com/acme/app/pull/123",
+            "--title",
+            "fix: login",
+            "--body",
+            pr_body(state, _verification()),
+        ]
+    ]
+
+
 def test_finalize_pr_creates_gitlab_mr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
     calls: list[list[str]] = []
@@ -124,6 +183,27 @@ def test_finalize_pr_creates_gitlab_mr(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.pr_url == "https://gitlab.com/acme/app/-/merge_requests/123"
     assert any(call[:3] == ["glab", "mr", "create"] for call in calls)
+
+
+def test_create_draft_pr_prefixes_gitlab_draft_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["git", "remote", "-v"]:
+            return _result("origin\thttps://gitlab.com/acme/app.git (fetch)\n")
+        if argv[:3] == ["glab", "mr", "create"]:
+            return _result("Created https://gitlab.com/acme/app/-/merge_requests/123\n")
+        return _result("")
+
+    result = create_draft_pr(_state(), runner=runner)
+
+    assert result.pr_url == "https://gitlab.com/acme/app/-/merge_requests/123"
+    create = next(call for call in calls if call[:3] == ["glab", "mr", "create"])
+    assert create[create.index("--title") + 1] == "Draft: fix: login"
 
 
 def test_push_branch_pushes_to_inferred_remote(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,6 +264,19 @@ def test_finalize_pr_updates_existing_gitlab_mr(
     assert any(call[:3] == ["glab", "mr", "update"] for call in calls)
 
 
+def test_mark_pr_ready_calls_github_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return _result("")
+
+    mark_pr_ready("https://github.com/acme/app/pull/123", Path("/repo"), runner=runner)
+
+    assert calls == [["gh", "pr", "ready", "https://github.com/acme/app/pull/123"]]
+
+
 def test_finalize_pr_requires_only_detected_forge_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,7 +303,7 @@ def test_pr_body_records_verification_review_spec_and_lane() -> None:
     assert "`/workspace`" in body
 
 
-def _state() -> LaneState:
+def _state(pr: str | None = None) -> LaneState:
     return LaneState(
         schema=1,
         id="login",
@@ -220,7 +313,7 @@ def _state() -> LaneState:
         path=Path("/workspace"),
         spec="login",
         review="approve",
-        pr=None,
+        pr=pr,
     )
 
 
