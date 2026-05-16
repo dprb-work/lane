@@ -110,6 +110,13 @@ def update_pr_metadata(
     else:
         _require_tool("glab", purpose="GitLab MR metadata update")
         mr = _gitlab_mr(state.pr)
+        title = _preserve_gitlab_draft_prefix(
+            title,
+            mr.iid,
+            mr.repo_selector,
+            state.path,
+            runner,
+        )
         _run_required(
             [
                 "glab",
@@ -325,6 +332,42 @@ def _existing_mr_url(branch: str, cwd: Path, runner: Runner) -> str | None:
         return None
     url = raw.get("web_url") or raw.get("webUrl") or raw.get("url")
     return url if isinstance(url, str) and url else None
+
+
+def _preserve_gitlab_draft_prefix(
+    title: str,
+    iid: str,
+    repo_selector: str,
+    cwd: Path,
+    runner: Runner,
+) -> str:
+    existing = _gitlab_mr_title(iid, repo_selector, cwd, runner)
+    if existing is None:
+        return title
+    for prefix in ("Draft:", "WIP:"):
+        if existing.lower().startswith(prefix.lower()):
+            return f"{prefix} {title}"
+    return title
+
+
+def _gitlab_mr_title(
+    iid: str,
+    repo_selector: str,
+    cwd: Path,
+    runner: Runner,
+) -> str | None:
+    result = runner(
+        ["glab", "mr", "view", iid, "--repo", repo_selector, "--output", "json"],
+        cwd,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    title = raw.get("title")
+    return title if isinstance(title, str) else None
 
 
 def _extract_url(output: str) -> str:

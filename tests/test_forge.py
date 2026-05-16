@@ -264,6 +264,26 @@ def test_finalize_pr_updates_existing_gitlab_mr(
     assert any(call[:3] == ["glab", "mr", "update"] for call in calls)
 
 
+def test_update_pr_metadata_preserves_gitlab_draft_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv[:4] == ["glab", "mr", "view", "123"]:
+            return _result('{"title":"Draft: old title"}\n')
+        return _result("")
+
+    state = _state(pr="https://gitlab.com/acme/app/-/merge_requests/123")
+
+    update_pr_metadata(state, _verification(), runner=runner)
+
+    update = next(call for call in calls if call[:3] == ["glab", "mr", "update"])
+    assert update[update.index("--title") + 1] == "Draft: fix: login"
+
+
 def test_mark_pr_ready_calls_github_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
     calls: list[list[str]] = []
