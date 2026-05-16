@@ -34,7 +34,7 @@ make those states hard to reach.
 ## Golden Path
 
 1. `lane start feat/foo` creates the worktree, branch, active spec, lane state,
-   and a draft PR/MR with non-empty initial metadata.
+   initial spec commit, and a draft PR/MR with non-empty initial metadata.
 2. The developer or dev agent implements the lane.
 3. `lane push` verifies by default, publishes the branch, and updates PR/MR
    metadata when the lane already has a PR/MR.
@@ -65,6 +65,8 @@ In scope:
   early.
 - Ensure `lane start` writes useful initial PR/MR metadata rather than an empty
   description.
+- Ensure `lane start` pushes a real initial spec commit before creating the draft
+  PR/MR.
 - Ensure `lane push` updates PR/MR metadata when a PR/MR exists for the lane.
 - Keep `lane review` as the producer of aggregate agent verdict metadata.
 - Make `lane finalize` the readiness gate for human review.
@@ -114,6 +116,7 @@ lane state.
 ## Acceptance
 
 - `lane start` creates or records a draft PR/MR and stores its URL in lane state.
+- `lane start` creates an initial spec commit before pushing/opening the PR/MR.
 - `lane start` refuses or reports clearly when required forge setup prevents PR/MR
   creation.
 - `lane push` updates an existing PR/MR body using current lane state.
@@ -144,6 +147,8 @@ lane state.
 - [ ] Design optional review-summary comment template generation for `lane
   review`.
 - [x] Update `lane start` to create or attach a draft PR/MR and store its URL.
+- [x] Update `lane start` to commit initial spec files before opening the draft
+  PR/MR.
 - [x] Update `lane push` to refresh PR/MR metadata when a PR/MR exists.
 - [ ] Update `lane review` to render review metadata through the stable comment
   template when posting or refreshing review comments is supported.

@@ -97,9 +97,9 @@ lane start feat/workspace-status --base main
 
 `lane start` asks Paseo to create the workspace, writes `.lane/state.yaml`, and
 creates the required OpenSpec change with the schema inferred from the branch
-prefix. It then best-effort pushes the new branch and opens a draft PR/MR with
-non-empty lane metadata. If the forge handoff is unavailable, lane state is still
-written and a warning is printed.
+prefix. It then commits the initial spec files, best-effort pushes the new branch,
+and opens a draft PR/MR with non-empty lane metadata. If the forge handoff is
+unavailable, lane state is still written and a warning is printed.
 
 Attach an existing Paseo workspace to lane state:
 

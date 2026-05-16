@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 from lane import cli
@@ -40,6 +41,9 @@ def test_start_uses_paseo_create_and_writes_state(
         renamed.append((branch, cwd))
 
     spec_calls: list[tuple[str, str, str, Path]] = []
+    committed: list[Path] = []
+    pushed: list[str] = []
+    drafts: list[str] = []
 
     def fake_create_spec(
         name: str,
@@ -54,6 +58,26 @@ def test_start_uses_paseo_create_and_writes_state(
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "rename_current_branch", fake_rename_current_branch)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(
+        cli,
+        "_commit_initial_lane_state",
+        lambda state: committed.append(state.path),
+    )
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease=False: pushed.append(state.branch)
+        or "acme/app",
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_draft_pr",
+        lambda state: drafts.append(state.branch)
+        or ForgeResult(
+            repo="acme/app",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
 
     assert cli.main(["start", "fix/login", "--base", "main"]) == 0
 
@@ -65,8 +89,40 @@ def test_start_uses_paseo_create_and_writes_state(
     assert state.base == "main"
     assert state.path == workspace
     assert state.spec == "login"
+    assert state.pr == "https://github.com/acme/app/pull/123"
     assert spec_calls == [
         ("login", "lane-lite", "Lane for fix/login", workspace),
+    ]
+    assert committed == [workspace]
+    assert pushed == ["fix/login"]
+    assert drafts == ["fix/login"]
+
+
+def test_commit_initial_lane_state_commits_spec_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(
+        argv: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        text: bool,
+        capture_output: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, cwd))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    cli._commit_initial_lane_state(state)
+
+    assert calls == [
+        (["git", "add", "openspec/changes"], tmp_path),
+        (["git", "commit", "-m", "task: start login"], tmp_path),
     ]
 
 

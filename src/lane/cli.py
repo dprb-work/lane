@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -332,6 +333,7 @@ def handle_start(args: argparse.Namespace) -> int:
         raise
     write_state(worktree.path, state)
     try:
+        _commit_initial_lane_state(state)
         repo = push_branch(state)
         result = create_draft_pr(state)
     except ForgeError as error:
@@ -343,6 +345,29 @@ def handle_start(args: argparse.Namespace) -> int:
         print(f"draft pr: {result.pr_url}")
     _print_state(state)
     return 0
+
+
+def _commit_initial_lane_state(state: LaneState) -> None:
+    result = subprocess.run(
+        ["git", "add", "openspec/changes"],
+        cwd=state.path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "git add failed"
+        raise ForgeError(f"initial lane commit failed: {message}")
+    result = subprocess.run(
+        ["git", "commit", "-m", f"task: start {state.id}"],
+        cwd=state.path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "git commit failed"
+        raise ForgeError(f"initial lane commit failed: {message}")
 
 
 def handle_init(args: argparse.Namespace) -> int:
