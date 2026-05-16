@@ -472,8 +472,8 @@ def handle_abort(args: argparse.Namespace) -> int:
 def handle_finalize(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
-    if state.review != "approve":
-        raise ForgeError("finalize requires approved agent review; run `lane review`")
+    head = current_head(state.path)
+    _require_approved_review(state, head)
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
         if args.json:
@@ -629,7 +629,7 @@ def handle_review(args: argparse.Namespace) -> int:
         if agents is not None
         else run_review(state.path, **kwargs)
     )
-    state = replace(state, review=result.review)
+    state = replace(state, review=result.review, review_head=current_head(state.path))
     write_state(state.path, state)
     if args.json:
         _print_json(
@@ -648,6 +648,16 @@ def handle_review(args: argparse.Namespace) -> int:
         suffix = "" if run.paseo_agent_id is None else f" ({run.paseo_agent_id})"
         print(f"{run.agent}: {run.exit_status}{suffix}")
     return 0 if result.review in {"approve", "comment", "none"} else 1
+
+
+def _require_approved_review(state: LaneState, head: str) -> None:
+    if state.review != "approve":
+        raise ForgeError("finalize requires approved agent review; run `lane review`")
+    if state.review_head != head:
+        raise ForgeError(
+            "finalize requires approved agent review for current HEAD; "
+            "run `lane review`"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

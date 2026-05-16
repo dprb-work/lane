@@ -19,8 +19,8 @@ for human review.
 Make the PR/MR the visible collaboration surface from the beginning of a lane,
 while preserving `lane review` and `lane finalize` as separate lifecycle steps.
 Draft PRs/MRs can exist while work is in progress; finalized PRs/MRs must have
-fresh verification, agent review approval, archived spec state, pushed branch
-contents, and current metadata.
+fresh verification, agent review approval for the current `HEAD`, archived spec
+state, pushed branch contents, and current metadata.
 
 ## Problem
 
@@ -43,8 +43,9 @@ make those states hard to reach.
    comment.
 5. The dev agent archives the spec into the same branch before handoff.
 6. `lane finalize` verifies freshness, pushes the final branch, requires agent
-   review `approve`, requires the active spec to be archived, updates PR/MR
-   metadata, and marks the draft PR/MR ready for human review.
+   review `approve` for the current `HEAD`, requires the active spec to be
+   archived, updates PR/MR metadata, and marks the draft PR/MR ready for human
+   review.
 7. Human review and merge happen on the finalized PR/MR.
 8. `lane cleanup` runs only after merge and remains responsible for post-merge
    teardown and archive evidence.
@@ -52,7 +53,8 @@ make those states hard to reach.
 ## Terms
 
 - Agent review approval means the aggregate `lane review` result stored in lane
-  state is `approve`. It does not mean human GitHub/GitLab approval.
+  state is `approve` for the current `HEAD`. It does not mean human GitHub/GitLab
+  approval.
 - Human review starts after `lane finalize` marks the PR/MR ready.
 - Draft means visible but not ready for human review.
 - Finalized means ready for human review, not merged.
@@ -71,7 +73,8 @@ In scope:
 - Keep `lane review` as the producer of aggregate agent verdict metadata.
 - Make `lane finalize` the readiness gate for human review.
 - Make `lane finalize` require fresh verification, archived spec state, aggregate
-  agent review `approve`, pushed branch contents, and current PR/MR metadata.
+  agent review `approve` for the current `HEAD`, pushed branch contents, and
+  current PR/MR metadata.
 - Make `lane finalize` create or update PR/MR metadata if needed, then mark the
   PR/MR ready for review when the provider supports draft/ready state.
 - Use templates for PR/MR bodies and optional review-summary comments so metadata
@@ -125,7 +128,7 @@ lane state.
   `comment`, or `reject`.
 - `lane review` can render a templated review-summary comment without finalizing
   or marking the PR/MR ready.
-- `lane finalize` refuses when review is not `approve`.
+- `lane finalize` refuses when review is not `approve` for the current `HEAD`.
 - `lane finalize` refuses while `openspec/changes/<spec>` still exists.
 - `lane finalize` refuses when verification is stale or failing.
 - `lane finalize` pushes the final branch state before handoff succeeds.
@@ -154,6 +157,7 @@ lane state.
   template when posting or refreshing review comments is supported.
 - [x] Update `lane finalize` readiness gates for review approval, archived spec,
   fresh verification, pushed branch, and metadata refresh.
+- [x] Tie stored review approval to the reviewed `HEAD`.
 - [x] Update `lane finalize` to mark draft PRs/MRs ready for human review.
 - [x] Add focused CLI and forge-provider tests.
 - [x] Update README lifecycle documentation.
