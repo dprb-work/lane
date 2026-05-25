@@ -371,6 +371,7 @@ def test_post_review_summary_creates_github_comment(
         "api",
         "repos/acme/app/issues/123/comments",
         "--paginate",
+        "--slurp",
     ]
     assert calls[1][:4] == [
         "gh",
@@ -389,8 +390,14 @@ def test_post_review_summary_updates_existing_github_comment(
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
-        if argv == ["gh", "api", "repos/acme/app/issues/123/comments", "--paginate"]:
-            return _result('[{"id":456,"body":"<!-- lane-review-summary --> old"}]')
+        if argv == [
+            "gh",
+            "api",
+            "repos/acme/app/issues/123/comments",
+            "--paginate",
+            "--slurp",
+        ]:
+            return _result('[[{"id":456,"body":"<!-- lane-review-summary --> old"}]]')
         return _result('{"html_url":"https://github.com/acme/app/pull/123#issuecomment-456"}')
 
     state = _state(pr="https://github.com/acme/app/pull/123")
@@ -411,6 +418,8 @@ def test_post_review_summary_posts_gitlab_note(
 
     def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
+        if argv[:2] == ["glab", "api"]:
+            return _result("[]")
         return _result("Created https://gitlab.com/acme/app/-/merge_requests/123#note_1\n")
 
     state = _state(pr="https://gitlab.com/acme/app/-/merge_requests/123")
@@ -422,6 +431,12 @@ def test_post_review_summary_posts_gitlab_note(
     assert calls == [
         [
             "glab",
+            "api",
+            "projects/acme%2Fapp/merge_requests/123/notes",
+            "--paginate",
+        ],
+        [
+            "glab",
             "mr",
             "note",
             "123",
@@ -431,6 +446,39 @@ def test_post_review_summary_posts_gitlab_note(
             review_summary_comment_body(state, _review_result()),
         ]
     ]
+
+
+def test_post_review_summary_updates_existing_gitlab_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == [
+            "glab",
+            "api",
+            "projects/acme%2Fapp/merge_requests/123/notes",
+            "--paginate",
+        ]:
+            return _result('[{"id":789,"body":"<!-- lane-review-summary --> old"}]')
+        return _result(
+            '{"web_url":"https://gitlab.com/acme/app/-/merge_requests/123#note_789"}'
+        )
+
+    state = _state(pr="https://gitlab.com/acme/app/-/merge_requests/123")
+
+    assert (
+        post_or_update_review_summary_comment(state, _review_result(), runner=runner)
+        == "https://gitlab.com/acme/app/-/merge_requests/123#note_789"
+    )
+    assert calls[1][:3] == [
+        "glab",
+        "api",
+        "projects/acme%2Fapp/merge_requests/123/notes/789",
+    ]
+    assert "PUT" in calls[1]
 
 
 def _state(pr: str | None = None, review_head: str | None = None) -> LaneState:

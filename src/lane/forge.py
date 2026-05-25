@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from lane.forge_remote import (
     ForgeRemote,
@@ -260,7 +260,7 @@ def _existing_github_review_comment(
     runner: Runner,
 ) -> str | None:
     result = _run_required(
-        ["gh", "api", comments_path, "--paginate"],
+        ["gh", "api", comments_path, "--paginate", "--slurp"],
         workspace,
         runner,
     )
@@ -268,9 +268,7 @@ def _existing_github_review_comment(
         raw = json.loads(result.stdout)
     except json.JSONDecodeError:
         return None
-    if not isinstance(raw, list):
-        return None
-    for comment in raw:
+    for comment in _flatten_comments(raw):
         if not isinstance(comment, dict):
             continue
         body = comment.get("body")
@@ -278,6 +276,18 @@ def _existing_github_review_comment(
         if isinstance(body, str) and REVIEW_SUMMARY_MARKER in body:
             return str(comment_id) if comment_id is not None else None
     return None
+
+
+def _flatten_comments(raw: object) -> list[object]:
+    if not isinstance(raw, list):
+        return []
+    comments: list[object] = []
+    for item in raw:
+        if isinstance(item, list):
+            comments.extend(item)
+        else:
+            comments.append(item)
+    return comments
 
 
 def _comment_url_from_json(output: str) -> str | None:
@@ -298,6 +308,23 @@ def _post_gitlab_review_comment(
     runner: Runner,
 ) -> str | None:
     mr = _gitlab_mr(mr_url)
+    notes_path = _gitlab_notes_path(mr.repo_selector, mr.iid)
+    existing = _existing_gitlab_review_note(notes_path, workspace, runner)
+    if existing is not None:
+        update = _run_required(
+            [
+                "glab",
+                "api",
+                f"{notes_path}/{existing}",
+                "-X",
+                "PUT",
+                "-f",
+                f"body={body}",
+            ],
+            workspace,
+            runner,
+        )
+        return _comment_url_from_json(update.stdout)
     create = _run_required(
         [
             "glab",
@@ -314,6 +341,36 @@ def _post_gitlab_review_comment(
     )
     url = _extract_url(create.stdout)
     return url or None
+
+
+def _existing_gitlab_review_note(
+    notes_path: str,
+    workspace: Path,
+    runner: Runner,
+) -> str | None:
+    result = _run_required(
+        ["glab", "api", notes_path, "--paginate"],
+        workspace,
+        runner,
+    )
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    for note in _flatten_comments(raw):
+        if not isinstance(note, dict):
+            continue
+        body = note.get("body")
+        note_id = note.get("id")
+        if isinstance(body, str) and REVIEW_SUMMARY_MARKER in body:
+            return str(note_id) if note_id is not None else None
+    return None
+
+
+def _gitlab_notes_path(repo_selector: str, iid: str) -> str:
+    parsed = urlparse(repo_selector)
+    repo = parsed.path.strip("/") if parsed.scheme else repo_selector.strip("/")
+    return f"projects/{quote(repo, safe='')}/merge_requests/{iid}/notes"
 
 
 def _parse_github_pr_url(pr_url: str) -> _GitHubPullRequest:
