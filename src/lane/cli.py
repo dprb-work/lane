@@ -334,6 +334,16 @@ def handle_start(args: argparse.Namespace) -> int:
     write_state(worktree.path, state)
     try:
         _commit_initial_lane_state(state)
+    except ForgeError as error:
+        try:
+            archive_worktree(worktree.name)
+        except PaseoError as archive_error:
+            raise ForgeError(
+                "initial lane commit failed and rollback archive failed: "
+                f"{error}; {archive_error}"
+            ) from error
+        raise
+    try:
         repo = push_branch(state)
         result = create_draft_pr(state)
     except ForgeError as error:
