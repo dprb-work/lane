@@ -17,8 +17,8 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const branchPattern = /^(build|chore|ci|docs|feat|fix|hotfix|perf|refactor|revert|style|task|test)\/[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-            const conventionalPattern = /^((build|chore|ci|docs|feat|fix|hotfix|perf|refactor|revert|style|task|test)(\([A-Za-z0-9._/-]+\))?!?: .+|Merge.*into.*)$/;
+            const branchPattern = /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)\/[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+            const conventionalPattern = /^((build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9._/-]+\))?!?: .+|Merge.*into.*)$/;
 
             const pullRequest = context.payload.pull_request;
             if (!pullRequest) {

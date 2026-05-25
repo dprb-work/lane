@@ -126,6 +126,57 @@ def test_commit_initial_lane_state_commits_spec_files(
     ]
 
 
+def test_start_rolls_back_when_initial_commit_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
+        return PaseoWorktree(name="login", branch=branch, path=workspace)
+
+    archived: list[str] = []
+
+    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+        archived.append(name)
+        return PaseoArchiveResult(name="login", removed_agents=())
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(
+        cli,
+        "create_spec",
+        lambda name, *, schema, description, cwd: None,
+    )
+    monkeypatch.setattr(
+        cli,
+        "_commit_initial_lane_state",
+        lambda state: (_ for _ in ()).throw(cli.ForgeError("commit failed")),
+    )
+    monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease=False: (_ for _ in ()).throw(
+            AssertionError("should not push")
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_draft_pr",
+        lambda state: (_ for _ in ()).throw(AssertionError("should not create PR")),
+    )
+
+    assert cli.main(["start", "fix/login"]) == 2
+    assert archived == ["login"]
+
+
 def test_start_does_not_write_state_when_spec_creation_fails(
     tmp_path: Path,
     monkeypatch,
