@@ -6,7 +6,6 @@ remove the lane workspace.
 ## Metadata
 
 - Change id: `cleanup-archive-summary`
-- Branch: `task/cleanup-archive-summary`
 - Status: `active`
 - OpenSpec rationale:
   - changes cleanup lifecycle behavior

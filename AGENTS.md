@@ -27,5 +27,4 @@ fallback workflows unless explicitly requested.
 - Rulesets are active for conventional branch names on non-`main` branches and
   Conventional Commit messages on `main`.
 - Branches must use `<type>/<slug>` with one of `build`, `chore`, `ci`, `docs`,
-  `feat`, `fix`, `hotfix`, `perf`, `refactor`, `revert`, `style`, `task`, or
-  `test`.
+  `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, or `test`.

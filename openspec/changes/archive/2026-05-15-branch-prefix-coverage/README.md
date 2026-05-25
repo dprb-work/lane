@@ -13,7 +13,7 @@ Align lane branch parsing with the repository's conventional branch policy.
 ## Acceptance
 
 - `lane start` and branch parsing accept `build`, `chore`, `ci`, `docs`, `feat`,
-  `fix`, `hotfix`, `perf`, `refactor`, `revert`, `style`, `task`, and `test`.
+  `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
 - `feat/` still uses `spec-driven`.
 - Every other allowed prefix uses `lane-lite`.
 - Unsupported prefixes still fail with guidance.

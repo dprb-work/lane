@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -18,7 +19,14 @@ from lane.cleanup import (
     write_cleanup_archive_summary,
 )
 from lane.doctor import Diagnostic, has_failures, run_doctor
-from lane.forge import ForgeError, finalize_pr, push_branch
+from lane.forge import (
+    ForgeError,
+    create_draft_pr,
+    finalize_pr,
+    mark_pr_ready,
+    push_branch,
+    update_pr_metadata,
+)
 from lane.init import (
     InitError,
     compact_opencode_registration_note,
@@ -324,8 +332,42 @@ def handle_start(args: argparse.Namespace) -> int:
             ) from error
         raise
     write_state(worktree.path, state)
+    try:
+        _commit_initial_lane_state(state)
+        repo = push_branch(state)
+        result = create_draft_pr(state)
+    except ForgeError as error:
+        print(f"warning: draft PR not created: {error}", file=sys.stderr)
+    else:
+        state = replace(state, pr=result.pr_url)
+        write_state(worktree.path, state)
+        print(f"repo: {repo}")
+        print(f"draft pr: {result.pr_url}")
     _print_state(state)
     return 0
+
+
+def _commit_initial_lane_state(state: LaneState) -> None:
+    result = subprocess.run(
+        ["git", "add", "openspec/changes"],
+        cwd=state.path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "git add failed"
+        raise ForgeError(f"initial lane commit failed: {message}")
+    result = subprocess.run(
+        ["git", "commit", "-m", f"chore: start {state.id}"],
+        cwd=state.path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "git commit failed"
+        raise ForgeError(f"initial lane commit failed: {message}")
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -430,6 +472,8 @@ def handle_abort(args: argparse.Namespace) -> int:
 def handle_finalize(args: argparse.Namespace) -> int:
     state = _resolve_lane(args.selector)
     require_spec_archived(state.path, state.spec)
+    head = current_head(state.path)
+    _require_approved_review(state, head)
     state, verification = _publication_verification(state, no_verify=args.no_verify)
     if verification.exit_status != 0:
         if args.json:
@@ -446,6 +490,7 @@ def handle_finalize(args: argparse.Namespace) -> int:
         return verification.exit_status
     push_branch(state, force_with_lease=args.force_with_lease)
     result = finalize_pr(state, verification)
+    mark_pr_ready(result.pr_url, state.path)
     state = replace(state, status="finalized", pr=result.pr_url)
     write_state(state.path, state)
     if args.json:
@@ -480,6 +525,7 @@ def handle_push(args: argparse.Namespace) -> int:
         _print_verification_result(verification)
         return verification.exit_status
     repo = push_branch(state, force_with_lease=args.force_with_lease)
+    update_pr_metadata(state, verification)
     if args.json:
         _print_json(
             {
@@ -583,7 +629,7 @@ def handle_review(args: argparse.Namespace) -> int:
         if agents is not None
         else run_review(state.path, **kwargs)
     )
-    state = replace(state, review=result.review)
+    state = replace(state, review=result.review, review_head=current_head(state.path))
     write_state(state.path, state)
     if args.json:
         _print_json(
@@ -602,6 +648,16 @@ def handle_review(args: argparse.Namespace) -> int:
         suffix = "" if run.paseo_agent_id is None else f" ({run.paseo_agent_id})"
         print(f"{run.agent}: {run.exit_status}{suffix}")
     return 0 if result.review in {"approve", "comment", "none"} else 1
+
+
+def _require_approved_review(state: LaneState, head: str) -> None:
+    if state.review != "approve":
+        raise ForgeError("finalize requires approved agent review; run `lane review`")
+    if state.review_head != head:
+        raise ForgeError(
+            "finalize requires approved agent review for current HEAD; "
+            "run `lane review`"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

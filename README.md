@@ -97,7 +97,9 @@ lane start feat/workspace-status --base main
 
 `lane start` asks Paseo to create the workspace, writes `.lane/state.yaml`, and
 creates the required OpenSpec change with the schema inferred from the branch
-prefix.
+prefix. It then commits the initial spec files, best-effort pushes the new branch,
+and opens a draft PR/MR with non-empty lane metadata. If the forge handoff is
+unavailable, lane state is still written and a warning is printed.
 
 Attach an existing Paseo workspace to lane state:
 
@@ -205,15 +207,18 @@ Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
 
 `lane push` runs verification by default, records freshness on success, and then
 pushes the branch to the inferred forge remote with upstream setup when needed.
-Pass `--no-verify` to reuse an already fresh verification result instead of
-rerunning verification. Pass `--force-with-lease` to publish rewritten history;
-raw `--force` is not supported.
+When the lane already has a PR/MR URL, it refreshes the PR/MR title and body from
+the current lane template but leaves draft status unchanged. Pass `--no-verify`
+to reuse an already fresh verification result instead of rerunning verification.
+Pass `--force-with-lease` to publish rewritten history; raw `--force` is not
+supported.
 
-`lane finalize` refuses to proceed while `openspec/changes/<spec>` still exists,
-uses the same verified push lifecycle as `lane push`, creates or updates the
-GitHub PR or GitLab MR, stores the PR/MR URL, and marks the lane `finalized`.
-`--no-verify` and `--force-with-lease` are forwarded into the shared push
-lifecycle.
+`lane finalize` is the readiness gate before human review. It refuses to proceed
+while `openspec/changes/<spec>` still exists, refuses unless aggregate agent
+review is `approve`, uses the same verified push lifecycle as `lane push`,
+creates or updates the GitHub PR or GitLab MR metadata, marks draft PRs/MRs ready
+for review, stores the PR/MR URL, and marks the lane `finalized`. `--no-verify`
+and `--force-with-lease` are forwarded into the shared push lifecycle.
 
 `lane cleanup` refuses active specs and unmerged PRs before calling Paseo archive.
 After those gates pass, it writes `.lane/archive/<lane-id>.json` under the
@@ -263,12 +268,10 @@ Branch prefix selects the OpenSpec schema internally:
 | `docs/` | `lane-lite` |
 | `feat/` | `spec-driven` |
 | `fix/` | `lane-lite` |
-| `hotfix/` | `lane-lite` |
 | `perf/` | `lane-lite` |
 | `refactor/` | `lane-lite` |
 | `revert/` | `lane-lite` |
 | `style/` | `lane-lite` |
-| `task/` | `lane-lite` |
 | `test/` | `lane-lite` |
 
 Unsupported prefixes fail with guidance. The initial command surface has no

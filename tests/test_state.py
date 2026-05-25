@@ -76,6 +76,25 @@ def test_write_and_read_state_with_verification(tmp_path: Path) -> None:
     assert read_state(tmp_path) == state
 
 
+def test_write_and_read_state_with_review_head(tmp_path: Path) -> None:
+    state = LaneState(
+        schema=1,
+        id="login-redirect",
+        status="active",
+        branch="fix/login-redirect",
+        base="main",
+        path=tmp_path,
+        spec="login-redirect",
+        review="approve",
+        review_head="abc123",
+        pr=None,
+    )
+
+    write_state(tmp_path, state)
+
+    assert read_state(tmp_path) == state
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -83,6 +102,7 @@ def test_write_and_read_state_with_verification(tmp_path: Path) -> None:
         ("status", "unknown"),
         ("review", "pending"),
         ("pr", 123),
+        ("review_head", 123),
         ("verification", []),
     ],
 )

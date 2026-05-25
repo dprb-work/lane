@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 from lane import cli
@@ -40,6 +41,9 @@ def test_start_uses_paseo_create_and_writes_state(
         renamed.append((branch, cwd))
 
     spec_calls: list[tuple[str, str, str, Path]] = []
+    committed: list[Path] = []
+    pushed: list[str] = []
+    drafts: list[str] = []
 
     def fake_create_spec(
         name: str,
@@ -54,6 +58,26 @@ def test_start_uses_paseo_create_and_writes_state(
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "rename_current_branch", fake_rename_current_branch)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(
+        cli,
+        "_commit_initial_lane_state",
+        lambda state: committed.append(state.path),
+    )
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state, *, force_with_lease=False: pushed.append(state.branch)
+        or "acme/app",
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_draft_pr",
+        lambda state: drafts.append(state.branch)
+        or ForgeResult(
+            repo="acme/app",
+            pr_url="https://github.com/acme/app/pull/123",
+        ),
+    )
 
     assert cli.main(["start", "fix/login", "--base", "main"]) == 0
 
@@ -65,8 +89,40 @@ def test_start_uses_paseo_create_and_writes_state(
     assert state.base == "main"
     assert state.path == workspace
     assert state.spec == "login"
+    assert state.pr == "https://github.com/acme/app/pull/123"
     assert spec_calls == [
         ("login", "lane-lite", "Lane for fix/login", workspace),
+    ]
+    assert committed == [workspace]
+    assert pushed == ["fix/login"]
+    assert drafts == ["fix/login"]
+
+
+def test_commit_initial_lane_state_commits_spec_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(
+        argv: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        text: bool,
+        capture_output: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, cwd))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    cli._commit_initial_lane_state(state)
+
+    assert calls == [
+        (["git", "add", "openspec/changes"], tmp_path),
+        (["git", "commit", "-m", "chore: start login"], tmp_path),
     ]
 
 
@@ -837,6 +893,24 @@ def test_finalize_materialized_remote_lane_does_not_recreate_archived_spec(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+
+    def fake_resolve_lane(selector: str | None) -> LaneState:
+        state = LaneState(
+            schema=1,
+            id="login-review",
+            status="active",
+            branch="fix/login",
+            base="main",
+            path=workspace,
+            spec="login",
+            review="approve",
+            review_head="abc123",
+            pr="https://github.com/acme/app/pull/123",
+        )
+        write_state(workspace, state)
+        return state
+
+    monkeypatch.setattr(cli, "_resolve_lane", fake_resolve_lane)
     monkeypatch.setattr(
         cli,
         "run_verify",
@@ -860,6 +934,7 @@ def test_finalize_materialized_remote_lane_does_not_recreate_archived_spec(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+    monkeypatch.setattr(cli, "mark_pr_ready", lambda pr_url, workspace: None)
 
     assert cli.main(["finalize", "#123"]) == 0
 
@@ -1085,7 +1160,7 @@ def test_finalize_refuses_active_spec(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(tmp_path, branch="fix/login", review="approve", review_head="abc123")
     write_state(tmp_path, state)
     (tmp_path / "openspec" / "changes" / state.spec).mkdir(parents=True)
 
@@ -1098,11 +1173,12 @@ def test_finalize_updates_state_with_pr_url(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(tmp_path, branch="fix/login", review="approve", review_head="abc123")
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
     monkeypatch.setattr(
         cli,
         "run_verify",
@@ -1126,6 +1202,7 @@ def test_finalize_updates_state_with_pr_url(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+    monkeypatch.setattr(cli, "mark_pr_ready", lambda pr_url, workspace: None)
 
     assert cli.main(["finalize"]) == 0
     updated = read_state(tmp_path)
@@ -1140,11 +1217,12 @@ def test_finalize_json_prints_result(
     monkeypatch,
     capsys,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(tmp_path, branch="fix/login", review="approve", review_head="abc123")
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
     monkeypatch.setattr(
         cli,
         "run_verify",
@@ -1168,6 +1246,7 @@ def test_finalize_json_prints_result(
             pr_url="https://github.com/acme/app/pull/123",
         ),
     )
+    monkeypatch.setattr(cli, "mark_pr_ready", lambda pr_url, workspace: None)
 
     assert cli.main(["finalize", "--json"]) == 0
 
@@ -1188,11 +1267,18 @@ def test_finalize_prints_failed_verification_details(
     monkeypatch,
     capsys,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+        review="approve",
+        review_head="abc123",
+    )
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
     monkeypatch.setattr(
         cli,
         "run_verify",
@@ -1220,6 +1306,48 @@ def test_finalize_prints_failed_verification_details(
     assert "command: npm run verify" in captured.out
     assert "exit status: 127" in captured.out
     assert "summary:\nsh: 1: ruff: not found" in captured.out
+
+
+def test_finalize_refuses_unapproved_agent_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login", review="comment")
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: (_ for _ in ()).throw(AssertionError("should not verify")),
+    )
+
+    assert cli.main(["finalize"]) == 2
+
+
+def test_finalize_refuses_stale_approved_agent_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        review="approve",
+        review_head="old123",
+    )
+    write_state(tmp_path, state)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_spec_archived", lambda workspace, spec: None)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        cli,
+        "run_verify",
+        lambda workspace: (_ for _ in ()).throw(AssertionError("should not verify")),
+    )
+
+    assert cli.main(["finalize"]) == 2
 
 
 def test_verify_records_successful_freshness(
@@ -1343,6 +1471,7 @@ def test_review_json_prints_result_and_updates_state(
     write_state(tmp_path, state)
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "current_head", lambda workspace: "abc123")
     monkeypatch.setattr(
         cli,
         "run_review",
@@ -1365,6 +1494,7 @@ def test_review_json_prints_result_and_updates_state(
     output = json.loads(capsys.readouterr().out)
     assert output["review"] == "comment"
     assert output["state"]["review"] == "comment"
+    assert output["state"]["review_head"] == "abc123"
     assert output["missing_agents"] == ["lane-review-security"]
     assert output["runs"] == [
         {
@@ -1375,15 +1505,21 @@ def test_review_json_prints_result_and_updates_state(
         }
     ]
     assert read_state(tmp_path).review == "comment"
+    assert read_state(tmp_path).review_head == "abc123"
 
 
 def test_push_runs_verification_before_pushing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    state = _state(tmp_path, branch="fix/login")
+    state = _state(
+        tmp_path,
+        branch="fix/login",
+        pr="https://github.com/acme/app/pull/123",
+    )
     write_state(tmp_path, state)
     pushed: list[tuple[str, bool]] = []
+    metadata_updates: list[str | None] = []
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -1404,10 +1540,16 @@ def test_push_runs_verification_before_pushing(
         )
         or "acme/app",
     )
+    monkeypatch.setattr(
+        cli,
+        "update_pr_metadata",
+        lambda state, verification: metadata_updates.append(state.pr),
+    )
 
     assert cli.main(["push"]) == 0
 
     assert pushed == [("fix/login", False)]
+    assert metadata_updates == ["https://github.com/acme/app/pull/123"]
     assert read_state(tmp_path).verification is not None
 
 
@@ -1604,6 +1746,8 @@ def _state(
     *,
     branch: str,
     pr: str | None = None,
+    review: str = "none",
+    review_head: str | None = None,
     verification: VerificationState | None = None,
 ) -> LaneState:
     lane_id = branch.split("/", maxsplit=1)[1]
@@ -1615,7 +1759,8 @@ def _state(
         base="main",
         path=path,
         spec=lane_id,
-        review="none",
+        review=review,  # type: ignore[arg-type]
+        review_head=review_head,
         pr=pr,
         verification=verification,
     )
