@@ -3,42 +3,54 @@
 ## Metadata
 
 - Change id: `doctor-forge-readiness`
-- Status: `draft`
-- Branch: `feat/doctor-forge-readiness` or `none yet`
-- Worktree: `/home/d/wt/lane/doctor-forge-readiness` or `none yet`
-- PR: `none yet` or `none yet`
+- Status: `active`
+- Branch: `feat/doctor-forge-readiness`
+- Worktree: `/home/d/wt/lane/doctor-forge-readiness`
+- PR: `none yet`
 - OpenSpec rationale:
-  - state why this change needs OpenSpec
-  - if this is unexpectedly exempt, stop and use the repo exemption path
+  - changes user-facing doctor diagnostics
+  - spans CLI behavior, tests, README, and backlog state
 
 ## Intent
 
-State the user-facing or repo-facing outcome in 1-3 sentences.
+Make `lane doctor` catch forge readiness problems before lifecycle commands try
+to push, open PRs/MRs, or query merge state.
 
 ## Problem
 
-Describe the concrete problem, constraint, or opportunity.
+Forge operations are now part of normal `lane start`, `lane push`, `lane
+finalize`, and `lane cleanup` flows. The existing doctor check only confirms the
+provider CLI is installed, so users can still discover missing auth or unreadable
+repository access only after a lifecycle command fails.
 
 ## Scope
 
 In scope:
 
-- item
-- item
+- Add read-only forge auth diagnostics for the detected provider.
+- For GitHub, check `gh auth status` and read access to the inferred repo.
+- For GitHub, report repository ruleset readability without mutating rulesets.
+- Keep GitLab coverage to CLI auth status and repo metadata readability.
+- Add focused tests and README/backlog updates.
 
 Out of scope:
 
-- item
-- item
+- Ruleset mutation.
+- New doctor flags or config.
+- Broad provider abstraction changes.
 
 ## Approach
 
-Summarize the intended implementation direction without full design detail.
+Extend the existing forge doctor path into a small set of provider-specific
+read-only checks. Keep missing auth and unreadable repo metadata as failures,
+and keep optional ruleset readability as a warning so normal lifecycle use is
+not blocked by admin-only GitHub APIs.
 
 ## Review Notes
 
 - Known risks:
-  - item
+  - Provider CLI output varies by version; tests assert command behavior and
+    compact diagnostic details rather than full CLI output.
 - Verification expectations:
-  - item
-
+  - `python -m pytest`
+  - `python -m ruff check .`

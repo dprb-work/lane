@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
+from lane.branches import parse_branch
 from lane.forge_remote import ForgeRemoteError, infer_forge_remote
 from lane.paseo import PaseoError, list_worktrees
 from lane.run import command_env
@@ -43,7 +44,7 @@ def run_doctor(
         _paseo_check(workspace, runner),
         _paseo_daemon_check(workspace, runner),
         _tool_check("openspec"),
-        _forge_check(workspace, runner),
+        *_forge_checks(workspace, runner),
         _verification_check(workspace),
         _lane_state_check(workspace),
     )
@@ -81,18 +82,94 @@ def _paseo_daemon_check(workspace: Path, runner: Runner) -> Diagnostic:
     return Diagnostic("ok", "paseo daemon", "worktree list available")
 
 
-def _forge_check(workspace: Path, runner: Runner) -> Diagnostic:
+def _forge_checks(workspace: Path, runner: Runner) -> tuple[Diagnostic, ...]:
     if shutil.which("git") is None:
-        return Diagnostic("fail", "forge", "git not found on PATH")
+        return (Diagnostic("fail", "forge", "git not found on PATH"),)
     try:
         remote = infer_forge_remote(workspace, runner=runner)
     except ForgeRemoteError as error:
-        return Diagnostic("warn", "forge", str(error))
+        return (Diagnostic("warn", "forge", str(error)),)
     cli = "gh" if remote.provider == "github" else "glab"
     if shutil.which(cli) is None:
-        return Diagnostic("fail", "forge", f"{remote.provider} remote requires {cli}")
+        return (
+            Diagnostic("fail", "forge", f"{remote.provider} remote requires {cli}"),
+        )
     detail = f"{remote.provider} via {remote.name}: {remote.repo}"
-    return Diagnostic("ok", "forge", detail)
+    diagnostics = [Diagnostic("ok", "forge", detail)]
+    if remote.provider == "github":
+        diagnostics.extend(_github_readiness_checks(remote.repo, workspace, runner))
+    else:
+        diagnostics.extend(_gitlab_readiness_checks(remote.repo, workspace, runner))
+    return tuple(diagnostics)
+
+
+def _github_readiness_checks(
+    repo: str,
+    workspace: Path,
+    runner: Runner,
+) -> tuple[Diagnostic, ...]:
+    auth = runner(["gh", "auth", "status"], workspace)
+    repo_view = runner(["gh", "repo", "view", repo], workspace)
+    rulesets = runner(["gh", "api", f"repos/{repo}/rulesets"], workspace)
+    return (
+        _diagnostic_from_result(
+            auth,
+            name="forge auth",
+            ok_detail="gh auth available",
+            failure_status="fail",
+        ),
+        _diagnostic_from_result(
+            repo_view,
+            name="forge repo",
+            ok_detail=f"readable: {repo}",
+            failure_status="fail",
+        ),
+        _diagnostic_from_result(
+            rulesets,
+            name="forge rulesets",
+            ok_detail="readable",
+            failure_status="warn",
+        ),
+    )
+
+
+def _gitlab_readiness_checks(
+    repo: str,
+    workspace: Path,
+    runner: Runner,
+) -> tuple[Diagnostic, ...]:
+    auth = runner(["glab", "auth", "status"], workspace)
+    repo_view = runner(["glab", "repo", "view", repo], workspace)
+    return (
+        _diagnostic_from_result(
+            auth,
+            name="forge auth",
+            ok_detail="glab auth available",
+            failure_status="fail",
+        ),
+        _diagnostic_from_result(
+            repo_view,
+            name="forge repo",
+            ok_detail=f"readable: {repo}",
+            failure_status="fail",
+        ),
+    )
+
+
+def _diagnostic_from_result(
+    result: subprocess.CompletedProcess[str],
+    *,
+    name: str,
+    ok_detail: str,
+    failure_status: DiagnosticStatus,
+) -> Diagnostic:
+    if result.returncode == 0:
+        return Diagnostic("ok", name, ok_detail)
+    return Diagnostic(failure_status, name, _result_message(result))
+
+
+def _result_message(result: subprocess.CompletedProcess[str]) -> str:
+    return result.stderr.strip() or result.stdout.strip() or "command failed"
 
 
 def _verification_check(workspace: Path) -> Diagnostic:
@@ -119,6 +196,15 @@ def _lane_state_check(workspace: Path) -> Diagnostic:
         state = read_state(path.parent.parent)
     except Exception as error:
         return Diagnostic("fail", "lane state", str(error))
+    try:
+        parse_branch(state.branch)
+    except ValueError as error:
+        return Diagnostic("fail", "lane state", str(error))
+    if (
+        state.status in {"review", "finalized", "merged", "cleaned"}
+        and state.pr is None
+    ):
+        return Diagnostic("warn", "lane state", f"{state.id} ({state.status}, no PR)")
     return Diagnostic("ok", "lane state", f"{state.id} ({state.status})")
 
 
