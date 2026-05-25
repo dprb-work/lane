@@ -25,10 +25,13 @@ def test_command_env_activates_workspace_venv(
     assert "PYTHONHOME" not in env
 
 
-def test_command_env_leaves_env_when_venv_missing(tmp_path: Path) -> None:
-    env = command_env(tmp_path, {"PATH": "/usr/bin", "PYTHONHOME": "/pythonhome"})
+def test_command_env_clears_python_env_when_venv_missing(tmp_path: Path) -> None:
+    env = command_env(
+        tmp_path,
+        {"PATH": "/usr/bin", "PYTHONHOME": "/pythonhome", "VIRTUAL_ENV": "/venv"},
+    )
 
-    assert env == {"PATH": "/usr/bin", "PYTHONHOME": "/pythonhome"}
+    assert env == {"PATH": "/usr/bin"}
 
 
 def test_run_lane_command_passes_workspace_argv_and_env(tmp_path: Path) -> None:

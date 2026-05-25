@@ -44,6 +44,49 @@ def test_discover_verify_uses_package_json(tmp_path: Path) -> None:
     )
 
 
+def test_discover_verify_uses_python_script(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "verify.py").write_text("", encoding="utf-8")
+
+    assert discover_verify_command(tmp_path) == VerifyCommand(
+        argv=["python3", "scripts/verify.py"],
+        label="python3 scripts/verify.py",
+    )
+
+
+def test_run_verify_uses_python3_script_without_workspace_venv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "verify.py").write_text("", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    python3 = bin_dir / "python3"
+    python3.write_text("#!/bin/sh\n", encoding="utf-8")
+    python3.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    calls: list[list[str]] = []
+
+    def runner(
+        argv: list[str],
+        cwd: Path,
+        env: dict[str, str],
+        *,
+        capture_output: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        assert "VIRTUAL_ENV" not in env
+        return _result("ok\n")
+
+    result = run_verify(tmp_path, runner=runner)
+
+    assert calls == [["python3", "scripts/verify.py"]]
+    assert result.exit_status == 0
+
+
 def test_discover_verify_rejects_missing_command(tmp_path: Path) -> None:
     with pytest.raises(VerifyError, match="no verify command found"):
         discover_verify_command(tmp_path)
