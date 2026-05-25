@@ -43,11 +43,21 @@ def discover_verify_command(workspace: Path) -> VerifyCommand:
     if _justfile_has_verify(workspace):
         return VerifyCommand(argv=["just", "verify"], label="just verify")
 
+    verify_script = workspace / "scripts" / "verify.py"
+    if verify_script.exists():
+        return VerifyCommand(
+            argv=["python", "scripts/verify.py"],
+            label="python scripts/verify.py",
+        )
+
     package_json = workspace / "package.json"
     if package_json.exists() and _package_has_verify(package_json):
         return VerifyCommand(argv=["npm", "run", "verify"], label="npm run verify")
 
-    raise VerifyError("no verify command found; add `just verify` or `npm run verify`")
+    raise VerifyError(
+        "no verify command found; add `just verify`, `scripts/verify.py`, "
+        "or `npm run verify`"
+    )
 
 
 def run_verify(

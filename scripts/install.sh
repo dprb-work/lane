@@ -14,8 +14,8 @@ usage() {
   printf 'Usage: %s [--yes] [--dev]\n' "$0"
   printf '\n'
   printf 'Installs required lane dependencies:\n'
-  printf '  system tools: git, gh, glab, just, npm, python3\n'
-  printf '  npm CLIs: %s, %s into %s\n' "$PASEO_PACKAGE" "$OPENSPEC_PACKAGE" "$NPM_PREFIX"
+  printf '  system tools: git, gh, glab, npm, python3\n'
+  printf '  npm-installed CLIs: %s, %s into %s\n' "$PASEO_PACKAGE" "$OPENSPEC_PACKAGE" "$NPM_PREFIX"
   printf '  Python package: lane%s into %s\n' ' (editable)' "$VENV_DIR"
   printf '  executable links in: %s\n' "$BIN_DIR"
 }
@@ -76,7 +76,7 @@ sudo_prefix() {
 
 install_system_tools() {
   missing=""
-  for tool in git gh glab just npm python3; do
+  for tool in git gh glab npm python3; do
     if ! have "$tool"; then
       missing="$missing $tool"
     fi
@@ -94,26 +94,26 @@ install_system_tools() {
     # shellcheck disable=SC2086
     $sudo_cmd apt-get update
     # shellcheck disable=SC2086
-    $sudo_cmd apt-get install -y git gh glab just npm python3 python3-venv
+    $sudo_cmd apt-get install -y git gh glab npm python3 python3-venv
     return 0
   fi
 
   if have brew; then
-    brew install git gh glab just node python
+    brew install git gh glab node python
     return 0
   fi
 
   if have dnf; then
     sudo_cmd="$(sudo_prefix)"
     # shellcheck disable=SC2086
-    $sudo_cmd dnf install -y git gh glab just npm python3
+    $sudo_cmd dnf install -y git gh glab npm python3
     return 0
   fi
 
   if have pacman; then
     sudo_cmd="$(sudo_prefix)"
     # shellcheck disable=SC2086
-    $sudo_cmd pacman -Sy --needed --noconfirm git github-cli glab just npm python
+    $sudo_cmd pacman -Sy --needed --noconfirm git github-cli glab npm python
     return 0
   fi
 
@@ -128,7 +128,6 @@ install_node_clis() {
   fi
 
   mkdir -p "$NPM_PREFIX" "$BIN_DIR"
-  npm install
   npm install --prefix "$NPM_PREFIX" -g "$PASEO_PACKAGE" "$OPENSPEC_PACKAGE"
   link_executable "$NPM_PREFIX/bin/paseo" "$BIN_DIR/paseo"
   link_executable "$NPM_PREFIX/bin/openspec" "$BIN_DIR/openspec"
@@ -165,7 +164,7 @@ link_executable() {
 
 report_versions() {
   printf '\nInstalled versions:\n'
-  for cmd in git gh glab just npm python3 paseo openspec lane; do
+  for cmd in git gh glab npm python3 paseo openspec lane; do
     if have "$cmd"; then
       printf '  %s: ' "$cmd"
       "$cmd" --version | sed -n '1p'

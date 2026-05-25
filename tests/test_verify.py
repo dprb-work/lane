@@ -44,6 +44,17 @@ def test_discover_verify_uses_package_json(tmp_path: Path) -> None:
     )
 
 
+def test_discover_verify_uses_python_script(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "verify.py").write_text("", encoding="utf-8")
+
+    assert discover_verify_command(tmp_path) == VerifyCommand(
+        argv=["python", "scripts/verify.py"],
+        label="python scripts/verify.py",
+    )
+
+
 def test_discover_verify_rejects_missing_command(tmp_path: Path) -> None:
     with pytest.raises(VerifyError, match="no verify command found"):
         discover_verify_command(tmp_path)

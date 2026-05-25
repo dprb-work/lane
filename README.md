@@ -57,8 +57,8 @@ scripts/install.sh --yes --dev
 ```
 
 The installer owns dependency installation. It installs system tools, installs
-Paseo and OpenSpec CLIs into a user-local npm prefix, installs npm dependencies,
-creates a repo-local `.venv`, and installs the editable Python package there.
+Paseo and OpenSpec CLIs into a user-local npm prefix, creates a repo-local
+`.venv`, and installs the editable Python package there.
 It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
 directory is on `PATH`. `lane init` is repo bootstrap and validation.
 
@@ -158,10 +158,11 @@ non-zero when required checks fail, but warnings such as missing lane state
 outside a lane or unreadable GitHub rulesets do not fail the command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
-runs `npm run verify` when `package.json` has a `verify` script. Verification
-reports the command, exit status, and a concise output summary. Successful
-verification records freshness in `.lane/state.yaml` for the current `HEAD`.
-When the lane workspace has `.venv/bin`, verification runs with
+runs `python scripts/verify.py` when that script exists, then falls back to
+`npm run verify` when `package.json` has a `verify` script. Verification reports
+the command, exit status, and a concise output summary. Successful verification
+records freshness in `.lane/state.yaml` for the current `HEAD`. When the lane
+workspace has `.venv/bin`, verification runs with
 `VIRTUAL_ENV=<workspace>/.venv`, `.venv/bin` prepended to `PATH`, and `PYTHONHOME`
 removed.
 
