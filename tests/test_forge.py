@@ -60,6 +60,7 @@ def test_infer_forge_remote_detects_gitlab_remote() -> None:
 
     assert remote.provider == "gitlab"
     assert remote.name == "origin"
+    assert remote.host == "gitlab.com"
     assert remote.repo == "acme/group/app"
 
 

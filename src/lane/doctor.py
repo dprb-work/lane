@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from lane.branches import parse_branch
-from lane.forge_remote import ForgeRemoteError, infer_forge_remote
+from lane.forge_remote import ForgeRemote, ForgeRemoteError, infer_forge_remote
 from lane.paseo import PaseoError, list_worktrees
 from lane.run import command_env
 from lane.state import find_state_path, read_state
@@ -99,7 +99,7 @@ def _forge_checks(workspace: Path, runner: Runner) -> tuple[Diagnostic, ...]:
     if remote.provider == "github":
         diagnostics.extend(_github_readiness_checks(remote.repo, workspace, runner))
     else:
-        diagnostics.extend(_gitlab_readiness_checks(remote.repo, workspace, runner))
+        diagnostics.extend(_gitlab_readiness_checks(remote, workspace, runner))
     return tuple(diagnostics)
 
 
@@ -134,12 +134,13 @@ def _github_readiness_checks(
 
 
 def _gitlab_readiness_checks(
-    repo: str,
+    remote: ForgeRemote,
     workspace: Path,
     runner: Runner,
 ) -> tuple[Diagnostic, ...]:
-    auth = runner(["glab", "auth", "status"], workspace)
-    repo_view = runner(["glab", "repo", "view", repo], workspace)
+    repo_selector = _gitlab_repo_selector(remote)
+    auth = runner(["glab", "auth", "status", "--hostname", remote.host], workspace)
+    repo_view = runner(["glab", "repo", "view", repo_selector], workspace)
     return (
         _diagnostic_from_result(
             auth,
@@ -150,7 +151,7 @@ def _gitlab_readiness_checks(
         _diagnostic_from_result(
             repo_view,
             name="forge repo",
-            ok_detail=f"readable: {repo}",
+            ok_detail=f"readable: {repo_selector}",
             failure_status="fail",
         ),
     )
@@ -170,6 +171,12 @@ def _diagnostic_from_result(
 
 def _result_message(result: subprocess.CompletedProcess[str]) -> str:
     return result.stderr.strip() or result.stdout.strip() or "command failed"
+
+
+def _gitlab_repo_selector(remote: ForgeRemote) -> str:
+    if remote.host == "gitlab.com":
+        return remote.repo
+    return f"https://{remote.host}/{remote.repo}"
 
 
 def _verification_check(workspace: Path) -> Diagnostic:

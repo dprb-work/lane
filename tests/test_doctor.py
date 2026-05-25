@@ -120,7 +120,7 @@ def test_run_doctor_reports_gitlab_auth_and_repo_readiness(
             return _result(stdout="[]")
         if argv == ["git", "remote", "-v"]:
             return _result(stdout="origin\thttps://gitlab.com/acme/app.git (fetch)\n")
-        if argv == ["glab", "auth", "status"]:
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.com"]:
             return _result(stdout="Logged in\n")
         if argv == ["glab", "repo", "view", "acme/app"]:
             return _result(stdout="acme/app\n")
@@ -131,6 +131,52 @@ def test_run_doctor_reports_gitlab_auth_and_repo_readiness(
     assert ("ok", "forge", "gitlab via origin: acme/app") in _triples(diagnostics)
     assert ("ok", "forge auth", "glab auth available") in _triples(diagnostics)
     assert ("ok", "forge repo", "readable: acme/app") in _triples(diagnostics)
+
+
+def test_run_doctor_targets_self_hosted_gitlab_remote(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(
+                stdout="origin\tgit@gitlab.example.com:acme/group/app.git (fetch)\n"
+            )
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.example.com"]:
+            return _result(stdout="Logged in\n")
+        if argv == [
+            "glab",
+            "repo",
+            "view",
+            "https://gitlab.example.com/acme/group/app",
+        ]:
+            return _result(stdout="acme/group/app\n")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert not has_failures(diagnostics)
+    assert ("ok", "forge", "gitlab via origin: acme/group/app") in _triples(
+        diagnostics
+    )
+    assert ["glab", "auth", "status", "--hostname", "gitlab.example.com"] in calls
+    assert [
+        "glab",
+        "repo",
+        "view",
+        "https://gitlab.example.com/acme/group/app",
+    ] in calls
 
 
 def test_run_doctor_rejects_invalid_lane_state_branch(
