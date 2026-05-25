@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import quote, urlparse
 
 from lane.forge_remote import (
     ForgeRemote,
@@ -15,6 +16,7 @@ from lane.forge_remote import (
     provider_from_pr_url,
 )
 from lane.github_remote import GitHubRemoteError, infer_github_remote
+from lane.review import ReviewResult
 from lane.state import LaneState
 from lane.verify import VerifyResult
 
@@ -27,6 +29,9 @@ class ForgeError(RuntimeError):
 class ForgeResult:
     repo: str
     pr_url: str
+
+
+REVIEW_SUMMARY_MARKER = "<!-- lane-review-summary -->"
 
 
 class Runner(Protocol):
@@ -137,6 +142,56 @@ def update_pr_metadata(
     return state.pr
 
 
+def post_or_update_review_summary_comment(
+    state: LaneState,
+    result: ReviewResult,
+    *,
+    runner: Runner | None = None,
+) -> str | None:
+    if state.pr is None:
+        return None
+    runner = _run if runner is None else runner
+    body = review_summary_comment_body(state, result)
+    try:
+        provider = provider_from_pr_url(state.pr)
+    except ForgeRemoteError as error:
+        raise ForgeError(str(error)) from error
+    if provider == "github":
+        _require_tool("gh", purpose="GitHub PR review comment update")
+        return _post_or_update_github_review_comment(state.pr, body, state.path, runner)
+
+    _require_tool("glab", purpose="GitLab MR review comment update")
+    return _post_gitlab_review_comment(state.pr, body, state.path, runner)
+
+
+def review_summary_comment_body(state: LaneState, result: ReviewResult) -> str:
+    missing = ", ".join(f"`{agent}`" for agent in result.missing_agents) or "none"
+    runs = [
+        "| Agent | Paseo agent | Exit status |",
+        "| --- | --- | --- |",
+    ]
+    runs.extend(
+        f"| `{run.agent}` | `{run.paseo_agent_id or 'unknown'}` | `{run.exit_status}` |"
+        for run in result.runs
+    )
+    if not result.runs:
+        runs.append("| none | none | `0` |")
+    return "\n".join(
+        [
+            REVIEW_SUMMARY_MARKER,
+            "## Lane Review Summary",
+            f"- Lane: `{state.id}`.",
+            f"- Branch: `{state.branch}`.",
+            f"- Reviewed head: `{state.review_head or 'unknown'}`.",
+            f"- Aggregate review: `{result.review}`.",
+            f"- Missing agents: {missing}.",
+            "",
+            "## Runs",
+            *runs,
+        ]
+    )
+
+
 def mark_pr_ready(
     pr_url: str,
     workspace: Path,
@@ -159,6 +214,187 @@ def mark_pr_ready(
             workspace,
             runner,
         )
+
+
+@dataclass(frozen=True)
+class _GitHubPullRequest:
+    repo: str
+    number: str
+
+
+def _post_or_update_github_review_comment(
+    pr_url: str,
+    body: str,
+    workspace: Path,
+    runner: Runner,
+) -> str | None:
+    pr = _parse_github_pr_url(pr_url)
+    comments_path = f"repos/{pr.repo}/issues/{pr.number}/comments"
+    existing = _existing_github_review_comment(comments_path, workspace, runner)
+    if existing is not None:
+        update = _run_required(
+            [
+                "gh",
+                "api",
+                f"repos/{pr.repo}/issues/comments/{existing}",
+                "-X",
+                "PATCH",
+                "-f",
+                f"body={body}",
+            ],
+            workspace,
+            runner,
+        )
+        return _comment_url_from_json(update.stdout)
+    create = _run_required(
+        ["gh", "pr", "comment", pr_url, "--body", body],
+        workspace,
+        runner,
+    )
+    return create.stdout.strip() or None
+
+
+def _existing_github_review_comment(
+    comments_path: str,
+    workspace: Path,
+    runner: Runner,
+) -> str | None:
+    result = _run_required(
+        ["gh", "api", comments_path, "--paginate", "--slurp"],
+        workspace,
+        runner,
+    )
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    for comment in _flatten_comments(raw):
+        if not isinstance(comment, dict):
+            continue
+        body = comment.get("body")
+        comment_id = comment.get("id")
+        if isinstance(body, str) and REVIEW_SUMMARY_MARKER in body:
+            return str(comment_id) if comment_id is not None else None
+    return None
+
+
+def _flatten_comments(raw: object) -> list[object]:
+    if not isinstance(raw, list):
+        return []
+    comments: list[object] = []
+    for item in raw:
+        if isinstance(item, list):
+            comments.extend(item)
+        else:
+            comments.append(item)
+    return comments
+
+
+def _comment_url_from_json(output: str) -> str | None:
+    try:
+        raw = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    url = raw.get("html_url") or raw.get("web_url") or raw.get("url")
+    return url if isinstance(url, str) and url else None
+
+
+def _post_gitlab_review_comment(
+    mr_url: str,
+    body: str,
+    workspace: Path,
+    runner: Runner,
+) -> str | None:
+    mr = _gitlab_mr(mr_url)
+    notes_path = _gitlab_notes_path(mr.repo_selector, mr.iid)
+    api_hostname = _gitlab_api_hostname(mr.repo_selector)
+    existing = _existing_gitlab_review_note(notes_path, api_hostname, workspace, runner)
+    if existing is not None:
+        argv = [
+            "glab",
+            "api",
+            f"{notes_path}/{existing}",
+            "-X",
+            "PUT",
+            "-f",
+            f"body={body}",
+        ]
+        if api_hostname is not None:
+            argv.extend(["--hostname", api_hostname])
+        update = _run_required(
+            argv,
+            workspace,
+            runner,
+        )
+        return _comment_url_from_json(update.stdout)
+    create = _run_required(
+        [
+            "glab",
+            "mr",
+            "note",
+            mr.iid,
+            "--repo",
+            mr.repo_selector,
+            "--message",
+            body,
+        ],
+        workspace,
+        runner,
+    )
+    url = _extract_url(create.stdout)
+    return url or None
+
+
+def _existing_gitlab_review_note(
+    notes_path: str,
+    api_hostname: str | None,
+    workspace: Path,
+    runner: Runner,
+) -> str | None:
+    argv = ["glab", "api", notes_path, "--paginate"]
+    if api_hostname is not None:
+        argv.extend(["--hostname", api_hostname])
+    result = _run_required(
+        argv,
+        workspace,
+        runner,
+    )
+    try:
+        raw = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    for note in _flatten_comments(raw):
+        if not isinstance(note, dict):
+            continue
+        body = note.get("body")
+        note_id = note.get("id")
+        if isinstance(body, str) and REVIEW_SUMMARY_MARKER in body:
+            return str(note_id) if note_id is not None else None
+    return None
+
+
+def _gitlab_notes_path(repo_selector: str, iid: str) -> str:
+    parsed = urlparse(repo_selector)
+    repo = parsed.path.strip("/") if parsed.scheme else repo_selector.strip("/")
+    return f"projects/{quote(repo, safe='')}/merge_requests/{iid}/notes"
+
+
+def _gitlab_api_hostname(repo_selector: str) -> str | None:
+    parsed = urlparse(repo_selector)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    hostname = parsed.netloc.rsplit("@", maxsplit=1)[-1]
+    return None if hostname == "gitlab.com" else hostname
+
+
+def _parse_github_pr_url(pr_url: str) -> _GitHubPullRequest:
+    parsed = urlparse(pr_url)
+    parts = parsed.path.strip("/").split("/")
+    if parsed.hostname != "github.com" or len(parts) != 4 or parts[2] != "pull":
+        raise ForgeError(f"not a GitHub PR URL: {pr_url}")
+    return _GitHubPullRequest(repo=f"{parts[0]}/{parts[1]}", number=parts[3])
 
 
 def _finalize_github_pr(
@@ -302,6 +538,7 @@ def _state_with_pr(state: LaneState, pr_url: str) -> LaneState:
         path=state.path,
         spec=state.spec,
         review=state.review,
+        review_head=state.review_head,
         pr=pr_url,
         verification=state.verification,
     )

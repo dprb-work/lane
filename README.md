@@ -204,7 +204,9 @@ provider owns the underlying runtime and reviewers can run concurrently. After
 reviewers finish, `lane review` runs a foreground judge phase with the
 `lane-review-judge` mode. Pass `--review-judge <name>` to use a different full
 Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
-`comment`, or `reject`.
+`comment`, or `reject`. When the lane has a PR/MR URL, `lane review` also posts
+or refreshes a templated review-summary comment with the aggregate verdict,
+reviewed `HEAD`, missing agents, and per-agent run status.
 
 `lane push` runs verification by default, records freshness on success, and then
 pushes the branch to the inferred forge remote with upstream setup when needed.
