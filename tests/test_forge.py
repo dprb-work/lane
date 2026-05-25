@@ -60,6 +60,7 @@ def test_infer_forge_remote_detects_gitlab_remote() -> None:
 
     assert remote.provider == "gitlab"
     assert remote.name == "origin"
+    assert remote.host == "gitlab.com"
     assert remote.repo == "acme/group/app"
 
 
@@ -75,6 +76,17 @@ def test_parse_forge_remote_url_detects_self_hosted_gitlab_remote() -> None:
         "gitlab",
         "acme/group/app",
     )
+
+
+def test_infer_forge_remote_preserves_https_port() -> None:
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        return _result(
+            "origin\thttps://gitlab.example.com:8443/acme/group/app.git (fetch)\n"
+        )
+
+    remote = infer_forge_remote(Path("/repo"), runner=runner)
+
+    assert remote.host == "gitlab.example.com:8443"
 
 
 def test_finalize_pr_creates_pr(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -26,6 +26,12 @@ def test_run_doctor_reports_ok_diagnostics(tmp_path: Path, monkeypatch) -> None:
             return _result(stdout="[]")
         if argv == ["git", "remote", "-v"]:
             return _result(stdout="upstream\thttps://github.com/acme/app.git (fetch)\n")
+        if argv == ["gh", "auth", "status"]:
+            return _result(stdout="Logged in\n")
+        if argv == ["gh", "repo", "view", "acme/app"]:
+            return _result(stdout="acme/app\n")
+        if argv == ["gh", "api", "repos/acme/app/rulesets"]:
+            return _result(stdout="[]")
         raise AssertionError(argv)
 
     diagnostics = run_doctor(tmp_path, runner=runner)
@@ -33,6 +39,9 @@ def test_run_doctor_reports_ok_diagnostics(tmp_path: Path, monkeypatch) -> None:
     assert not has_failures(diagnostics)
     assert ("ok", "paseo", "0.1.75") in _triples(diagnostics)
     assert ("ok", "forge", "github via upstream: acme/app") in _triples(diagnostics)
+    assert ("ok", "forge auth", "gh auth available") in _triples(diagnostics)
+    assert ("ok", "forge repo", "readable: acme/app") in _triples(diagnostics)
+    assert ("ok", "forge rulesets", "readable") in _triples(diagnostics)
     assert ("ok", "verification", "npm run verify") in _triples(diagnostics)
     assert ("ok", "lane state", "login (active)") in _triples(diagnostics)
 
@@ -62,12 +71,199 @@ def test_run_doctor_reports_failures_and_warnings(tmp_path: Path, monkeypatch) -
     assert ("warn", "lane state", "no .lane/state.yaml found") in triples
 
 
-def _state(path: Path) -> LaneState:
+def test_run_doctor_reports_github_auth_and_repo_failures(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(stdout="origin\thttps://github.com/acme/app.git (fetch)\n")
+        if argv == ["gh", "auth", "status"]:
+            return _result(returncode=1, stderr="not logged in")
+        if argv == ["gh", "repo", "view", "acme/app"]:
+            return _result(returncode=1, stderr="HTTP 404")
+        if argv == ["gh", "api", "repos/acme/app/rulesets"]:
+            return _result(returncode=1, stderr="HTTP 403")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+    triples = _triples(diagnostics)
+
+    assert has_failures(diagnostics)
+    assert ("fail", "forge auth", "not logged in") in triples
+    assert ("fail", "forge repo", "HTTP 404") in triples
+    assert ("warn", "forge rulesets", "HTTP 403") in triples
+
+
+def test_run_doctor_reports_gitlab_auth_and_repo_readiness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(stdout="origin\thttps://gitlab.com/acme/app.git (fetch)\n")
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.com"]:
+            return _result(stdout="Logged in\n")
+        if argv == ["glab", "repo", "view", "acme/app"]:
+            return _result(stdout="acme/app\n")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert ("ok", "forge", "gitlab via origin: acme/app") in _triples(diagnostics)
+    assert ("ok", "forge auth", "glab auth available") in _triples(diagnostics)
+    assert ("ok", "forge repo", "readable: acme/app") in _triples(diagnostics)
+
+
+def test_run_doctor_targets_self_hosted_gitlab_remote(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(
+                stdout="origin\tgit@gitlab.example.com:acme/group/app.git (fetch)\n"
+            )
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.example.com"]:
+            return _result(stdout="Logged in\n")
+        if argv == [
+            "glab",
+            "repo",
+            "view",
+            "https://gitlab.example.com/acme/group/app",
+        ]:
+            return _result(stdout="acme/group/app\n")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert not has_failures(diagnostics)
+    assert ("ok", "forge", "gitlab via origin: acme/group/app") in _triples(
+        diagnostics
+    )
+    assert ["glab", "auth", "status", "--hostname", "gitlab.example.com"] in calls
+    assert [
+        "glab",
+        "repo",
+        "view",
+        "https://gitlab.example.com/acme/group/app",
+    ] in calls
+
+
+def test_run_doctor_preserves_self_hosted_gitlab_https_port(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(
+                stdout="origin\thttps://gitlab.example.com:8443/acme/app.git (fetch)\n"
+            )
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.example.com:8443"]:
+            return _result(stdout="Logged in\n")
+        if argv == [
+            "glab",
+            "repo",
+            "view",
+            "https://gitlab.example.com:8443/acme/app",
+        ]:
+            return _result(stdout="acme/app\n")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert not has_failures(diagnostics)
+    assert ["glab", "auth", "status", "--hostname", "gitlab.example.com:8443"] in calls
+    assert [
+        "glab",
+        "repo",
+        "view",
+        "https://gitlab.example.com:8443/acme/app",
+    ] in calls
+
+
+def test_run_doctor_rejects_invalid_lane_state_branch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_state(tmp_path, _state(tmp_path, branch="task/login"))
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(stdout="origin\thttps://github.com/acme/app.git (fetch)\n")
+        if argv in (
+            ["gh", "auth", "status"],
+            ["gh", "repo", "view", "acme/app"],
+            ["gh", "api", "repos/acme/app/rulesets"],
+        ):
+            return _result(stdout="ok")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert has_failures(diagnostics)
+    assert any(
+        status == "fail"
+        and name == "lane state"
+        and "unsupported branch type 'task'" in detail
+        for status, name, detail in _triples(diagnostics)
+    )
+
+
+def _state(path: Path, *, branch: str = "fix/login") -> LaneState:
     return LaneState(
         schema=1,
         id="login",
         status="active",
-        branch="fix/login",
+        branch=branch,
         base="main",
         path=path,
         spec="login",

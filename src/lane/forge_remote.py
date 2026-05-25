@@ -18,6 +18,7 @@ class ForgeRemoteError(RuntimeError):
 class ForgeRemote:
     provider: ForgeProvider
     name: str
+    host: str
     repo: str
 
 
@@ -58,6 +59,18 @@ def infer_forge_remote(
 
 
 def parse_forge_remote_url(remote: str) -> tuple[ForgeProvider, str]:
+    parsed = _parse_forge_remote_url(remote)
+    return (parsed.provider, parsed.repo)
+
+
+@dataclass(frozen=True)
+class _ParsedForgeRemoteUrl:
+    provider: ForgeProvider
+    host: str
+    repo: str
+
+
+def _parse_forge_remote_url(remote: str) -> _ParsedForgeRemoteUrl:
     ssh_match = re.fullmatch(
         r"git@(?P<host>[^:]+):(?P<repo>.+?)(?:\.git)?",
         remote,
@@ -65,13 +78,18 @@ def parse_forge_remote_url(remote: str) -> tuple[ForgeProvider, str]:
     if ssh_match is not None:
         host = ssh_match.group("host")
         repo = _normalize_repo(ssh_match.group("repo"), remote)
-        return (_provider_from_host(host), repo)
+        return _ParsedForgeRemoteUrl(_provider_from_host(host), host, repo)
 
     parsed = urlparse(remote)
     if parsed.hostname is None:
         raise ForgeRemoteError(f"not a supported forge remote: {remote}")
     repo = _normalize_repo(parsed.path.strip("/"), remote)
-    return (_provider_from_host(parsed.hostname), repo)
+    authority = parsed.netloc.rsplit("@", maxsplit=1)[-1]
+    return _ParsedForgeRemoteUrl(
+        _provider_from_host(parsed.hostname),
+        authority,
+        repo,
+    )
 
 
 def provider_from_pr_url(pr_url: str) -> ForgeProvider:
@@ -125,7 +143,12 @@ def _remote_from_verbose_line(line: str) -> ForgeRemote | None:
     if len(parts) < 3 or parts[2] != "(fetch)":
         return None
     try:
-        provider, repo = parse_forge_remote_url(parts[1])
+        parsed = _parse_forge_remote_url(parts[1])
     except ForgeRemoteError:
         return None
-    return ForgeRemote(provider=provider, name=parts[0], repo=repo)
+    return ForgeRemote(
+        provider=parsed.provider,
+        name=parts[0],
+        host=parsed.host,
+        repo=parsed.repo,
+    )
