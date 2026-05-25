@@ -39,6 +39,8 @@ def command_env(
     venv = workspace / ".venv"
     venv_bin = venv / "bin"
     if not venv_bin.is_dir():
+        env.pop("VIRTUAL_ENV", None)
+        env.pop("PYTHONHOME", None)
         return env
 
     env["VIRTUAL_ENV"] = str(venv)

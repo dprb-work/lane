@@ -57,8 +57,8 @@ scripts/install.sh --yes --dev
 ```
 
 The installer owns dependency installation. It installs system tools, installs
-Paseo and OpenSpec CLIs into a user-local npm prefix, installs npm dependencies,
-creates a repo-local `.venv`, and installs the editable Python package there.
+Paseo and OpenSpec CLIs into a user-local npm prefix, creates a repo-local
+`.venv`, and installs the editable Python package there.
 It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
 directory is on `PATH`. `lane init` is repo bootstrap and validation.
 
@@ -158,10 +158,11 @@ non-zero when required checks fail, but warnings such as missing lane state
 outside a lane or unreadable GitHub rulesets do not fail the command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
-runs `npm run verify` when `package.json` has a `verify` script. Verification
-reports the command, exit status, and a concise output summary. Successful
-verification records freshness in `.lane/state.yaml` for the current `HEAD`.
-When the lane workspace has `.venv/bin`, verification runs with
+runs `python3 scripts/verify.py` when that script exists, then falls back to
+`npm run verify` when `package.json` has a `verify` script. Verification reports
+the command, exit status, and a concise output summary. Successful verification
+records freshness in `.lane/state.yaml` for the current `HEAD`. When the lane
+workspace has `.venv/bin`, verification runs with
 `VIRTUAL_ENV=<workspace>/.venv`, `.venv/bin` prepended to `PATH`, and `PYTHONHOME`
 removed.
 
@@ -289,14 +290,15 @@ Required external tools:
 | Paseo | Workspace/worktree create, list, archive |
 | OpenSpec | Required lane spec creation and archive workflow |
 | OpenCode/Codex/Claude Code/etc. | Optional provider runtime behind Paseo |
-| `just` or `npm` | Repo-defined verification command |
+| Python, `just`, or `npm` | Repo-defined verification command |
 | `git`, `gh`, and `glab` | Forge operations and local branch state |
 
 `gh` and `glab` are provider-specific. GitHub repos need `gh`; GitLab repos need
 `glab`; one repo does not need both provider CLIs for normal finalize and cleanup
-work. `lane init` reports all expected tools so missing optional capabilities are
-visible early, while individual commands still fail only when the missing tool
-blocks the selected provider path.
+work. `lane init` reports expected lifecycle and provider tools, while
+verification command tools remain repo-defined and are checked by `lane verify`.
+Individual commands still fail only when the missing tool blocks the selected
+provider path.
 
 Forge provider inference is intentionally local-policy driven: remotes on
 `github.com` are treated as GitHub, and any other parseable Git remote is treated

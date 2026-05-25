@@ -66,7 +66,8 @@ def test_run_doctor_reports_failures_and_warnings(tmp_path: Path, monkeypatch) -
     assert (
         "warn",
         "verification",
-        "no verify command found; add `just verify` or `npm run verify`",
+        "no verify command found; add `just verify`, `scripts/verify.py`, "
+        "or `npm run verify`",
     ) in triples
     assert ("warn", "lane state", "no .lane/state.yaml found") in triples
 
