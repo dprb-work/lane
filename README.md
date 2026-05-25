@@ -151,11 +151,12 @@ warnings.
 
 `lane doctor [path]` runs read-only environment diagnostics and prints compact
 `ok`, `warn`, and `fail` lines for required tools, Paseo CLI and daemon access,
-OpenSpec, forge CLI availability and auth for the detected remote provider,
-forge repository readability, GitHub ruleset readability, verification command
-discovery, and lane state validity when `.lane/state.yaml` is present. It exits
-non-zero when required checks fail, but warnings such as missing lane state
-outside a lane or unreadable GitHub rulesets do not fail the command.
+OpenSpec, OpenCode tool registration, forge CLI availability and auth for the
+detected remote provider, forge repository readability, GitHub ruleset
+readability, verification command discovery, and lane state validity when
+`.lane/state.yaml` is present. It exits non-zero when required checks fail, but
+warnings such as missing OpenCode tool registration, missing lane state outside a
+lane, or unreadable GitHub rulesets do not fail the command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `python3 scripts/verify.py` when that script exists, then falls back to

@@ -3,25 +3,26 @@
 ## Metadata
 
 - Change id: `doctor-opencode-tool-diagnostics`
-- Branch: `feat/doctor-opencode-tool-diagnostics` or `none yet`
-- Worktree: `/home/d/wt/lane/doctor-opencode-tool-diagnostics` or `none yet`
-- PR: `none yet` or `none yet`
+- Branch: `feat/doctor-opencode-tool-diagnostics`
+- Worktree: `/home/d/wt/lane/doctor-opencode-tool-diagnostics`
+- PR: `https://github.com/dprb-work/lane/pull/29`
 
 ## 1. Planning
 
-- [ ] 1.1 Confirm scope still matches the proposal
-- [ ] 1.2 Update linkage fields when branch, worktree, or PR changes
+- [x] 1.1 Confirm scope still matches the proposal
+- [x] 1.2 Update linkage fields when branch, worktree, or PR changes
+- [x] 1.3 Archive completed `pr-first-finalize-lifecycle` spec in this branch
 
 ## 2. Implementation
 
-- [ ] 2.1 Implement the primary code path
-- [ ] 2.2 Add or update focused tests
-- [ ] 2.3 Keep unrelated churn out of the lane
+- [x] 2.1 Implement the primary code path
+- [x] 2.2 Add or update focused tests
+- [x] 2.3 Keep unrelated churn out of the lane
 
 ## 3. Validation
 
-- [ ] 3.1 Run the planned verification commands
-- [ ] 3.2 Record notable validation gaps or residual risks
+- [x] 3.1 Run the planned verification commands
+- [x] 3.2 Record notable validation gaps or residual risks
 
 ## 4. Review Handoff
 
@@ -29,4 +30,3 @@
 - [ ] 4.2 Open the PR against the repo's review target branch
 - [ ] 4.3 Update proposal, design, and tasks with the PR link
 - [ ] 4.4 Hand off as `ready for review`
-

@@ -3,42 +3,53 @@
 ## Metadata
 
 - Change id: `doctor-opencode-tool-diagnostics`
-- Status: `draft`
-- Branch: `feat/doctor-opencode-tool-diagnostics` or `none yet`
-- Worktree: `/home/d/wt/lane/doctor-opencode-tool-diagnostics` or `none yet`
-- PR: `none yet` or `none yet`
+- Status: `active`
+- Branch: `feat/doctor-opencode-tool-diagnostics`
+- Worktree: `/home/d/wt/lane/doctor-opencode-tool-diagnostics`
+- PR: `https://github.com/dprb-work/lane/pull/29`
 - OpenSpec rationale:
-  - state why this change needs OpenSpec
-  - if this is unexpectedly exempt, stop and use the repo exemption path
+  - changes read-only environment diagnostics surfaced by `lane doctor`
+  - updates backlog/spec state while avoiding an archive-only PR
 
 ## Intent
 
-State the user-facing or repo-facing outcome in 1-3 sentences.
+Make `lane doctor` report whether the OpenCode custom `lane` tool is registered
+for the current checkout. Fold the completed PR-first lifecycle spec archive into
+this feature branch so archive maintenance is not shipped alone.
 
 ## Problem
 
-Describe the concrete problem, constraint, or opportunity.
+`lane init` tells users how to register the OpenCode tool, but `lane doctor` does
+not diagnose that registration later. That leaves agents with a stale or missing
+typed tool surface and no read-only health check explaining the fix.
 
 ## Scope
 
 In scope:
 
-- item
-- item
+- Add an OpenCode tool registration diagnostic to `lane doctor`.
+- Warn for missing, unrendered, unreadable, or other-checkout registrations.
+- Report ok when the installed tool points at this checkout.
+- Archive the completed `pr-first-finalize-lifecycle` spec in this branch.
+- Update README and backlog state.
 
 Out of scope:
 
-- item
-- item
+- Changing OpenCode registration behavior.
+- Adding provider-specific OpenCode runtime assumptions beyond the local tool file.
+- Reworking the doctor diagnostic model.
 
 ## Approach
 
-Summarize the intended implementation direction without full design detail.
+Reuse the existing `lane.init` OpenCode registration path helpers from a new
+read-only doctor check. Keep the diagnostic non-blocking because OpenCode support
+is useful for agents but not required for every lane user.
 
 ## Review Notes
 
 - Known risks:
-  - item
+  - installed package layouts may not contain a checkout-style path; report stale
+    registrations as warnings rather than failures
 - Verification expectations:
-  - item
-
+  - focused doctor tests
+  - full repo verification
