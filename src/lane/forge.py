@@ -309,18 +309,22 @@ def _post_gitlab_review_comment(
 ) -> str | None:
     mr = _gitlab_mr(mr_url)
     notes_path = _gitlab_notes_path(mr.repo_selector, mr.iid)
-    existing = _existing_gitlab_review_note(notes_path, workspace, runner)
+    api_hostname = _gitlab_api_hostname(mr.repo_selector)
+    existing = _existing_gitlab_review_note(notes_path, api_hostname, workspace, runner)
     if existing is not None:
+        argv = [
+            "glab",
+            "api",
+            f"{notes_path}/{existing}",
+            "-X",
+            "PUT",
+            "-f",
+            f"body={body}",
+        ]
+        if api_hostname is not None:
+            argv.extend(["--hostname", api_hostname])
         update = _run_required(
-            [
-                "glab",
-                "api",
-                f"{notes_path}/{existing}",
-                "-X",
-                "PUT",
-                "-f",
-                f"body={body}",
-            ],
+            argv,
             workspace,
             runner,
         )
@@ -345,11 +349,15 @@ def _post_gitlab_review_comment(
 
 def _existing_gitlab_review_note(
     notes_path: str,
+    api_hostname: str | None,
     workspace: Path,
     runner: Runner,
 ) -> str | None:
+    argv = ["glab", "api", notes_path, "--paginate"]
+    if api_hostname is not None:
+        argv.extend(["--hostname", api_hostname])
     result = _run_required(
-        ["glab", "api", notes_path, "--paginate"],
+        argv,
         workspace,
         runner,
     )
@@ -371,6 +379,14 @@ def _gitlab_notes_path(repo_selector: str, iid: str) -> str:
     parsed = urlparse(repo_selector)
     repo = parsed.path.strip("/") if parsed.scheme else repo_selector.strip("/")
     return f"projects/{quote(repo, safe='')}/merge_requests/{iid}/notes"
+
+
+def _gitlab_api_hostname(repo_selector: str) -> str | None:
+    parsed = urlparse(repo_selector)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    hostname = parsed.netloc.rsplit("@", maxsplit=1)[-1]
+    return None if hostname == "gitlab.com" else hostname
 
 
 def _parse_github_pr_url(pr_url: str) -> _GitHubPullRequest:

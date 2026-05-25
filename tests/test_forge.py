@@ -448,6 +448,39 @@ def test_post_review_summary_posts_gitlab_note(
     ]
 
 
+def test_post_review_summary_posts_self_hosted_gitlab_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv[:2] == ["glab", "api"]:
+            return _result("[]")
+        return _result(
+            "Created https://gitlab.example.com:8443/acme/app/-/merge_requests/123#note_1\n"
+        )
+
+    state = _state(pr="https://gitlab.example.com:8443/acme/app/-/merge_requests/123")
+
+    assert (
+        post_or_update_review_summary_comment(state, _review_result(), runner=runner)
+        == "https://gitlab.example.com:8443/acme/app/-/merge_requests/123#note_1"
+    )
+    assert calls[0] == [
+        "glab",
+        "api",
+        "projects/acme%2Fapp/merge_requests/123/notes",
+        "--paginate",
+        "--hostname",
+        "gitlab.example.com:8443",
+    ]
+    assert calls[1][calls[1].index("--repo") + 1] == (
+        "https://gitlab.example.com:8443/acme/app"
+    )
+
+
 def test_post_review_summary_updates_existing_gitlab_note(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -478,6 +511,42 @@ def test_post_review_summary_updates_existing_gitlab_note(
         "api",
         "projects/acme%2Fapp/merge_requests/123/notes/789",
     ]
+    assert "PUT" in calls[1]
+
+
+def test_post_review_summary_updates_self_hosted_gitlab_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.forge.shutil.which", lambda _: "/usr/bin/tool")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == [
+            "glab",
+            "api",
+            "projects/acme%2Fapp/merge_requests/123/notes",
+            "--paginate",
+            "--hostname",
+            "gitlab.example.com",
+        ]:
+            return _result('[{"id":789,"body":"<!-- lane-review-summary --> old"}]')
+        return _result(
+            '{"web_url":"https://gitlab.example.com/acme/app/-/merge_requests/123#note_789"}'
+        )
+
+    state = _state(pr="https://gitlab.example.com/acme/app/-/merge_requests/123")
+
+    assert (
+        post_or_update_review_summary_comment(state, _review_result(), runner=runner)
+        == "https://gitlab.example.com/acme/app/-/merge_requests/123#note_789"
+    )
+    assert calls[1][:3] == [
+        "glab",
+        "api",
+        "projects/acme%2Fapp/merge_requests/123/notes/789",
+    ]
+    assert calls[1][-2:] == ["--hostname", "gitlab.example.com"]
     assert "PUT" in calls[1]
 
 
