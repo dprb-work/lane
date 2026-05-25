@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
-from lane.forge_remote import ForgeRemoteError, infer_forge_remote
+from lane.forge_remote import ForgeRemote, ForgeRemoteError, infer_forge_remote
 from lane.paseo import PaseoError, list_worktrees
 from lane.run import command_env
 from lane.state import find_state_path, read_state
@@ -91,8 +91,52 @@ def _forge_check(workspace: Path, runner: Runner) -> Diagnostic:
     cli = "gh" if remote.provider == "github" else "glab"
     if shutil.which(cli) is None:
         return Diagnostic("fail", "forge", f"{remote.provider} remote requires {cli}")
+    auth = _forge_auth_check(remote, workspace, runner)
+    if auth is not None:
+        return auth
+    repo = _forge_repo_check(remote, workspace, runner)
+    if repo is not None:
+        return repo
     detail = f"{remote.provider} via {remote.name}: {remote.repo}"
     return Diagnostic("ok", "forge", detail)
+
+
+def _forge_auth_check(
+    remote: ForgeRemote,
+    workspace: Path,
+    runner: Runner,
+) -> Diagnostic | None:
+    if remote.provider == "github":
+        argv = ["gh", "auth", "status"]
+    else:
+        argv = ["glab", "auth", "status", "--hostname", remote.host]
+    result = runner(argv, workspace)
+    if result.returncode == 0:
+        return None
+    message = result.stderr.strip() or result.stdout.strip() or "auth status failed"
+    return Diagnostic("fail", "forge", message)
+
+
+def _forge_repo_check(
+    remote: ForgeRemote,
+    workspace: Path,
+    runner: Runner,
+) -> Diagnostic | None:
+    if remote.provider == "github":
+        argv = ["gh", "repo", "view", remote.repo]
+    else:
+        argv = ["glab", "repo", "view", _gitlab_repo_selector(remote)]
+    result = runner(argv, workspace)
+    if result.returncode == 0:
+        return None
+    message = result.stderr.strip() or result.stdout.strip() or "repo view failed"
+    return Diagnostic("fail", "forge", message)
+
+
+def _gitlab_repo_selector(remote: ForgeRemote) -> str:
+    if remote.host == "gitlab.com":
+        return remote.repo
+    return f"https://{remote.host}/{remote.repo}"
 
 
 def _verification_check(workspace: Path) -> Diagnostic:

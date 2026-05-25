@@ -26,6 +26,10 @@ def test_run_doctor_reports_ok_diagnostics(tmp_path: Path, monkeypatch) -> None:
             return _result(stdout="[]")
         if argv == ["git", "remote", "-v"]:
             return _result(stdout="upstream\thttps://github.com/acme/app.git (fetch)\n")
+        if argv == ["gh", "auth", "status"]:
+            return _result()
+        if argv == ["gh", "repo", "view", "acme/app"]:
+            return _result()
         raise AssertionError(argv)
 
     diagnostics = run_doctor(tmp_path, runner=runner)
@@ -60,6 +64,58 @@ def test_run_doctor_reports_failures_and_warnings(tmp_path: Path, monkeypatch) -
         "no verify command found; add `just verify` or `npm run verify`",
     ) in triples
     assert ("warn", "lane state", "no .lane/state.yaml found") in triples
+
+
+def test_run_doctor_targets_self_hosted_gitlab_remote(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"scripts":{"verify":"ruff check . && pytest"}}',
+        encoding="utf-8",
+    )
+    write_state(tmp_path, _state(tmp_path))
+
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(
+                stdout="origin\tgit@gitlab.example.com:acme/group/app.git (fetch)\n"
+            )
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.example.com"]:
+            return _result()
+        if argv == [
+            "glab",
+            "repo",
+            "view",
+            "https://gitlab.example.com/acme/group/app",
+        ]:
+            return _result()
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert not has_failures(diagnostics)
+    assert ("ok", "forge", "gitlab via origin: acme/group/app") in _triples(
+        diagnostics
+    )
+    assert ["glab", "auth", "status", "--hostname", "gitlab.example.com"] in calls
+    assert [
+        "glab",
+        "repo",
+        "view",
+        "https://gitlab.example.com/acme/group/app",
+    ] in calls
 
 
 def _state(path: Path) -> LaneState:
