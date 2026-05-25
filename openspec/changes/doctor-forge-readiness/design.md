@@ -5,7 +5,7 @@
 - Change id: `doctor-forge-readiness`
 - Branch: `feat/doctor-forge-readiness`
 - Worktree: `/home/d/wt/lane/doctor-forge-readiness`
-- PR: `none yet`
+- PR: `https://github.com/dprb-work/lane/pull/22`
 - Related proposal: `proposal.md`
 
 ## Technical Approach

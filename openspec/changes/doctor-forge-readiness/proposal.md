@@ -6,7 +6,7 @@
 - Status: `active`
 - Branch: `feat/doctor-forge-readiness`
 - Worktree: `/home/d/wt/lane/doctor-forge-readiness`
-- PR: `none yet`
+- PR: `https://github.com/dprb-work/lane/pull/22`
 - OpenSpec rationale:
   - changes user-facing doctor diagnostics
   - spans CLI behavior, tests, README, and backlog state
