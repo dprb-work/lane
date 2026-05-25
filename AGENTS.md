@@ -17,6 +17,17 @@ fallback workflows unless explicitly requested.
   config or provider-specific assumptions.
 - Prefer clear local policy over generalization.
 
+## Development Self-Hosting
+
+- When developing this repository itself, prefer `scripts/dev-lane.sh ...` over
+  `.venv/bin/lane ...` to run the current checkout's source. The shared dev venv
+  may contain editable console scripts from another worktree, while the helper
+  forces `PYTHONPATH=src` for this checkout and uses the venv only as Python and
+  dependency storage.
+- This is a repo-development helper, not a product fallback workflow. Normal
+  target repositories should use their installed `lane` command and `lane run`
+  for workspace-scoped execution.
+
 ## GitHub Setup
 
 - Repository: `dprb-work/lane`.
