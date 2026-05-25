@@ -147,13 +147,13 @@ lane state.
 - [x] Decide whether `lane start` must fail when draft PR/MR creation fails or can
   create the lane with an explicit warning and missing PR state.
 - [x] Design shared PR/MR body template generation for start, push, and finalize.
-- [ ] Design optional review-summary comment template generation for `lane
+- [x] Design optional review-summary comment template generation for `lane
   review`.
 - [x] Update `lane start` to create or attach a draft PR/MR and store its URL.
 - [x] Update `lane start` to commit initial spec files before opening the draft
   PR/MR.
 - [x] Update `lane push` to refresh PR/MR metadata when a PR/MR exists.
-- [ ] Update `lane review` to render review metadata through the stable comment
+- [x] Update `lane review` to render review metadata through the stable comment
   template when posting or refreshing review comments is supported.
 - [x] Update `lane finalize` readiness gates for review approval, archived spec,
   fresh verification, pushed branch, and metadata refresh.

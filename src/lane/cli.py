@@ -24,6 +24,7 @@ from lane.forge import (
     create_draft_pr,
     finalize_pr,
     mark_pr_ready,
+    post_or_update_review_summary_comment,
     push_branch,
     update_pr_metadata,
 )
@@ -641,10 +642,12 @@ def handle_review(args: argparse.Namespace) -> int:
     )
     state = replace(state, review=result.review, review_head=current_head(state.path))
     write_state(state.path, state)
+    review_comment = post_or_update_review_summary_comment(state, result)
     if args.json:
         _print_json(
             {
                 "review": result.review,
+                "review_comment": review_comment,
                 "state": state_to_dict(state),
                 "missing_agents": list(result.missing_agents),
                 "runs": [asdict(run) for run in result.runs],
@@ -652,6 +655,8 @@ def handle_review(args: argparse.Namespace) -> int:
         )
         return 0 if result.review in {"approve", "comment", "none"} else 1
     print(f"review: {result.review}")
+    if review_comment is not None:
+        print(f"review comment: {review_comment}")
     if result.missing_agents:
         print(f"missing agents: {', '.join(result.missing_agents)}")
     for run in result.runs:
