@@ -46,8 +46,8 @@ def discover_verify_command(workspace: Path) -> VerifyCommand:
     verify_script = workspace / "scripts" / "verify.py"
     if verify_script.exists():
         return VerifyCommand(
-            argv=["python", "scripts/verify.py"],
-            label="python scripts/verify.py",
+            argv=["python3", "scripts/verify.py"],
+            label="python3 scripts/verify.py",
         )
 
     package_json = workspace / "package.json"

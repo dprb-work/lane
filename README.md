@@ -158,7 +158,7 @@ non-zero when required checks fail, but warnings such as missing lane state
 outside a lane or unreadable GitHub rulesets do not fail the command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
-runs `python scripts/verify.py` when that script exists, then falls back to
+runs `python3 scripts/verify.py` when that script exists, then falls back to
 `npm run verify` when `package.json` has a `verify` script. Verification reports
 the command, exit status, and a concise output summary. Successful verification
 records freshness in `.lane/state.yaml` for the current `HEAD`. When the lane
