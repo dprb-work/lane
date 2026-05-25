@@ -44,7 +44,7 @@ def test_install_lane_lite_schema(tmp_path: Path) -> None:
     assert (schema_dir / "templates/lane.md").exists()
 
 
-def test_run_init_reports_optional_command_tools(
+def test_run_init_reports_required_tools(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -59,7 +59,7 @@ def test_run_init_reports_optional_command_tools(
 
     result = run_init(tmp_path, home=tmp_path)
 
-    assert result.missing_tools == ("openspec", "gh", "glab", "just")
+    assert result.missing_tools == ("openspec", "gh", "glab")
     assert result.paseo_config == tmp_path / "paseo.json"
 
 

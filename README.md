@@ -290,14 +290,15 @@ Required external tools:
 | Paseo | Workspace/worktree create, list, archive |
 | OpenSpec | Required lane spec creation and archive workflow |
 | OpenCode/Codex/Claude Code/etc. | Optional provider runtime behind Paseo |
-| `just` or `npm` | Repo-defined verification command |
+| Python, `just`, or `npm` | Repo-defined verification command |
 | `git`, `gh`, and `glab` | Forge operations and local branch state |
 
 `gh` and `glab` are provider-specific. GitHub repos need `gh`; GitLab repos need
 `glab`; one repo does not need both provider CLIs for normal finalize and cleanup
-work. `lane init` reports all expected tools so missing optional capabilities are
-visible early, while individual commands still fail only when the missing tool
-blocks the selected provider path.
+work. `lane init` reports expected lifecycle and provider tools, while
+verification command tools remain repo-defined and are checked by `lane verify`.
+Individual commands still fail only when the missing tool blocks the selected
+provider path.
 
 Forge provider inference is intentionally local-policy driven: remotes on
 `github.com` are treated as GitHub, and any other parseable Git remote is treated
