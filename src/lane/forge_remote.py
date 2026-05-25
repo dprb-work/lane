@@ -84,9 +84,10 @@ def _parse_forge_remote_url(remote: str) -> _ParsedForgeRemoteUrl:
     if parsed.hostname is None:
         raise ForgeRemoteError(f"not a supported forge remote: {remote}")
     repo = _normalize_repo(parsed.path.strip("/"), remote)
+    authority = parsed.netloc.rsplit("@", maxsplit=1)[-1]
     return _ParsedForgeRemoteUrl(
         _provider_from_host(parsed.hostname),
-        parsed.hostname,
+        authority,
         repo,
     )
 

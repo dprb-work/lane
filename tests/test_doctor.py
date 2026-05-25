@@ -179,6 +179,49 @@ def test_run_doctor_targets_self_hosted_gitlab_remote(
     ] in calls
 
 
+def test_run_doctor_preserves_self_hosted_gitlab_https_port(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: f"/bin/{tool}",
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["paseo", "--version"]:
+            return _result(stdout="0.1.75\n")
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(stdout="[]")
+        if argv == ["git", "remote", "-v"]:
+            return _result(
+                stdout="origin\thttps://gitlab.example.com:8443/acme/app.git (fetch)\n"
+            )
+        if argv == ["glab", "auth", "status", "--hostname", "gitlab.example.com:8443"]:
+            return _result(stdout="Logged in\n")
+        if argv == [
+            "glab",
+            "repo",
+            "view",
+            "https://gitlab.example.com:8443/acme/app",
+        ]:
+            return _result(stdout="acme/app\n")
+        raise AssertionError(argv)
+
+    diagnostics = run_doctor(tmp_path, runner=runner)
+
+    assert not has_failures(diagnostics)
+    assert ["glab", "auth", "status", "--hostname", "gitlab.example.com:8443"] in calls
+    assert [
+        "glab",
+        "repo",
+        "view",
+        "https://gitlab.example.com:8443/acme/app",
+    ] in calls
+
+
 def test_run_doctor_rejects_invalid_lane_state_branch(
     tmp_path: Path,
     monkeypatch,
