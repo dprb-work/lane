@@ -7,7 +7,6 @@ OpenSpec changes.
 
 - Extend `lane status` health checks with any additional fields discovered while
   designing later lifecycle commands.
-- Extend `lane doctor` with OpenCode tool registration diagnostics.
 - Review artifact capture under ignored lane-local storage, with reviewer and
   judge outputs preserved for audit/debugging.
 - Extend `lane sync` to refresh additional external reality such as review state,

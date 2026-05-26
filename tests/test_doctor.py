@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import lane.doctor as doctor
 from lane.doctor import has_failures, run_doctor
 from lane.state import LaneState, write_state
 
@@ -12,8 +13,14 @@ def test_run_doctor_reports_ok_diagnostics(tmp_path: Path, monkeypatch) -> None:
         '{"scripts":{"verify":"ruff check . && pytest"}}',
         encoding="utf-8",
     )
+    opencode_tool = tmp_path / "lane.ts"
+    opencode_tool.write_text(
+        str(Path(doctor.__file__).resolve().parents[2]),
+        encoding="utf-8",
+    )
     write_state(tmp_path, _state(tmp_path))
 
+    monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: opencode_tool)
     monkeypatch.setattr(
         "lane.doctor.shutil.which",
         lambda tool, path=None: f"/bin/{tool}",
@@ -42,6 +49,10 @@ def test_run_doctor_reports_ok_diagnostics(tmp_path: Path, monkeypatch) -> None:
     assert ("ok", "forge auth", "gh auth available") in _triples(diagnostics)
     assert ("ok", "forge repo", "readable: acme/app") in _triples(diagnostics)
     assert ("ok", "forge rulesets", "readable") in _triples(diagnostics)
+    assert any(
+        status == "ok" and name == "opencode tool"
+        for status, name, detail in _triples(diagnostics)
+    )
     assert ("ok", "verification", "npm run verify") in _triples(diagnostics)
     assert ("ok", "lane state", "login (active)") in _triples(diagnostics)
 
@@ -70,6 +81,59 @@ def test_run_doctor_reports_failures_and_warnings(tmp_path: Path, monkeypatch) -
         "or `npm run verify`",
     ) in triples
     assert ("warn", "lane state", "no .lane/state.yaml found") in triples
+
+
+def test_run_doctor_warns_when_opencode_tool_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    missing = tmp_path / "tools" / "lane.ts"
+    monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: missing)
+    monkeypatch.setattr(
+        "lane.doctor.compact_opencode_registration_note",
+        lambda: "register opencode tool: python3 scripts/register_opencode_tool.py",
+    )
+    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+
+    diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
+
+    assert (
+        "warn",
+        "opencode tool",
+        "register opencode tool: python3 scripts/register_opencode_tool.py",
+    ) in _triples(diagnostics)
+
+
+def test_run_doctor_reports_registered_opencode_tool(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    tool = tmp_path / "lane.ts"
+    tool.write_text(str(Path(doctor.__file__).resolve().parents[2]), encoding="utf-8")
+    monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: tool)
+    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+
+    diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
+
+    assert ("ok", "opencode tool", str(tool)) in _triples(diagnostics)
+
+
+def test_run_doctor_warns_for_stale_opencode_tool(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    tool = tmp_path / "lane.ts"
+    tool.write_text("const REPO_ROOT = '/other/checkout';", encoding="utf-8")
+    monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: tool)
+    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+
+    diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
+
+    assert (
+        "warn",
+        "opencode tool",
+        f"registered to another checkout or install: {tool}",
+    ) in _triples(diagnostics)
 
 
 def test_run_doctor_reports_github_auth_and_repo_failures(
