@@ -3,7 +3,7 @@
 ## Metadata
 
 - Change id: `doctor-opencode-tool-diagnostics`
-- Status: `active`
+- Status: `archived`
 - Branch: `feat/doctor-opencode-tool-diagnostics`
 - Worktree: `/home/d/wt/lane/doctor-opencode-tool-diagnostics`
 - PR: `https://github.com/dprb-work/lane/pull/29`
@@ -53,3 +53,7 @@ is useful for agents but not required for every lane user.
 - Verification expectations:
   - focused doctor tests
   - full repo verification
+
+## Archive Note
+
+Implemented and merged in PR 29.
