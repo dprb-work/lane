@@ -16,6 +16,63 @@ Providers -> OpenCode, Codex, Claude Code, or another Paseo-backed runtime
 lane     -> glue and lifecycle policy
 ```
 
+## Development Flow
+
+Initialize lane support once in the target repository:
+
+```bash
+lane init
+```
+
+Start each coherent piece of work as a typed branch. `lane start` creates the
+Paseo workspace, writes lane-local state, creates the required spec, commits the
+initial spec files, and opens a draft PR/MR when forge access is available:
+
+```bash
+lane start feat/workspace-status --base main
+```
+
+Do implementation work from inside the Paseo workspace. Use `lane status` and
+`lane doctor` to inspect state and environment health, `lane run` for ad hoc
+commands, and `lane verify` to run and record the repo verification command:
+
+```bash
+lane status
+lane doctor
+lane run -- python -m pytest
+lane verify
+```
+
+Publish and review the lane before human handoff. `lane push` verifies by
+default, pushes the branch, and refreshes PR/MR metadata. `lane review` runs the
+configured Paseo review agents and stores the aggregate verdict:
+
+```bash
+lane push
+lane review
+```
+
+When the implementation, spec, verification, and agent review are ready,
+finalize the lane. `lane finalize` refuses active specs, stale verification, and
+non-approving aggregate review, then marks the draft PR/MR ready for human
+review:
+
+```bash
+lane finalize
+```
+
+After the PR/MR is merged, clean up the lane. `lane cleanup` refuses active specs
+and unmerged PRs before writing an archive summary and asking Paseo to archive
+the workspace:
+
+```bash
+lane cleanup
+```
+
+If a lane is cancelled instead of merged, use `lane abort`. Destructive actions
+such as discarding changes, closing the PR/MR, or deleting the remote branch
+require explicit flags.
+
 ## State
 
 Each attached workspace stores ignored lane-local state under `.lane/state.yaml`:
