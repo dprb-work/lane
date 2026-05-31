@@ -162,7 +162,7 @@ def lane_lite_schema_path(*, home: Path | None = None) -> Path:
 
 
 def opencode_tool_source_path() -> Path:
-    source = files("lane.assets").joinpath("opencode/tools/lane.ts")
+    source = files("lane").joinpath("assets/opencode/tools/lane.ts")
     with as_file(source) as path:
         return path
 
@@ -335,9 +335,10 @@ def ensure_codex_skill(
         existing = path.read_text(encoding="utf-8")
         if CODEX_SKILL_MARKER not in existing:
             return "skipped"
-        if existing == _codex_skill():
+        skill = _codex_skill()
+        if existing == skill:
             return "unchanged"
-        path.write_text(_codex_skill(), encoding="utf-8")
+        path.write_text(skill, encoding="utf-8")
         return "replaced"
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -421,7 +422,7 @@ def install_lane_lite_schema(
 ) -> Path:
     if schema_dir is None:
         schema_dir = lane_lite_schema_path(home=home)
-    source = files("lane.assets").joinpath(f"openspec/schemas/{LANE_LITE_SCHEMA}")
+    source = files("lane").joinpath(f"assets/openspec/schemas/{LANE_LITE_SCHEMA}")
     with as_file(source) as source_path:
         shutil.copytree(source_path, schema_dir, dirs_exist_ok=True)
     return schema_dir
@@ -465,58 +466,5 @@ def _version_tuple(version: str) -> tuple[int, int, int]:
 
 
 def _codex_skill() -> str:
-    description = (
-        "Use when working in repositories that use the lane Paseo-native "
-        "lifecycle CLI, including starting lanes, checking status, running "
-        "verification, review handoff, finalize, cleanup, or deciding whether "
-        "raw git worktree commands are appropriate."
-    )
-    return f"""---
-name: lane
-description: {description}
----
-
-{CODEX_SKILL_MARKER}
-
-# Lane Workflow
-
-Use this skill when a repository uses `lane` for Paseo-native development lanes.
-
-## Rules
-
-- Prefer `lane` commands over raw `git worktree`, raw `git push`, or ad hoc
-  checkout commands.
-- Start coherent work with `lane start <type>/<slug>` unless the user explicitly
-  says not to or `lane`/Paseo is unavailable.
-- Work inside the created Paseo workspace, not the source checkout.
-- Use `lane status` and `lane doctor` before diagnosing lane lifecycle issues.
-- Use `lane run -- <command>` for lane-scoped commands.
-- Use `lane verify` for repository verification when available.
-- Use `lane review`, then `lane finalize`, before human PR or MR handoff when
-  the lane is ready.
-- Use `lane cleanup` for merged lanes and `lane abort` for cancelled lanes.
-- If `lane` or Paseo is unavailable and raw Git is necessary, state the
-  exception before using raw Git.
-
-## Common Commands
-
-```bash
-lane init
-lane start feat/example --base main
-lane status
-lane doctor
-lane run -- python -m pytest
-lane verify
-lane push
-lane review
-lane finalize
-lane cleanup
-```
-
-## Notes
-
-`lane` owns ignored `.lane/` state, required OpenSpec specs, verification,
-review orchestration, finalize, cleanup, and abort policy. Paseo owns workspace
-and worktree creation, setup, services, provider runtimes, agents, terminals,
-and archive behavior.
-"""
+    source = files("lane").joinpath("assets/codex/skills/lane/SKILL.md")
+    return source.read_text(encoding="utf-8")
