@@ -106,7 +106,8 @@ def run_review(
         changed_paths=changed_paths,
     )
     if not prompts:
-        return ReviewResult(review="none", runs=(), missing_agents=missing_agents)
+        review: ReviewStatus = "reject" if missing_agents else "none"
+        return ReviewResult(review=review, runs=(), missing_agents=missing_agents)
 
     paseo = _paseo_executable(workspace)
     if paseo is None:
@@ -127,6 +128,8 @@ def run_review(
     else:
         runs = reviewer_runs
         review = _aggregate_review(reviewer_runs)
+    if missing_agents:
+        review = "reject"
     return ReviewResult(
         review=review,
         runs=runs,

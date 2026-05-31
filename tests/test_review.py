@@ -215,9 +215,37 @@ def test_run_review_reports_missing_explicit_reviewer(
         expected=("quality",),
     )
 
-    assert result.review == "none"
+    assert result.review == "reject"
     assert result.runs == ()
     assert result.missing_agents == ("quality",)
+
+
+def test_run_review_rejects_when_any_explicit_reviewer_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reviewers = tmp_path / "reviewers"
+    reviewers.mkdir()
+    (reviewers / "quality.md").write_text("Quality rubric", encoding="utf-8")
+    monkeypatch.setattr("lane.review.shutil.which", lambda _: "/usr/bin/paseo")
+
+    def runner(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["paseo", "run"]:
+            return _result('{"agentId":"quality-1","status":"completed"}')
+        if argv[:2] == ["paseo", "wait"]:
+            return _result('{"status":"idle"}')
+        return _result("Verdict: approve")
+
+    result = run_review(
+        tmp_path,
+        runner=runner,
+        reviewers_dir=reviewers,
+        expected=("quality", "security"),
+    )
+
+    assert result.review == "reject"
+    assert result.missing_agents == ("security",)
+    assert [run.agent for run in result.runs] == ["quality"]
 
 
 def test_run_review_rejects_when_reviewer_wait_fails(
