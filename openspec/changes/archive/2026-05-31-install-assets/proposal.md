@@ -3,7 +3,7 @@
 ## Metadata
 
 - Change id: `install-assets`
-- Status: `active`
+- Status: `archived`
 - Branch: `feat/install-assets`
 - PR: `https://github.com/dprb-work/lane/pull/35`
 - OpenSpec rationale:
@@ -58,3 +58,7 @@ Out of scope:
 - Verification expectations:
   - `PYTHONPATH=src .venv/bin/python scripts/verify.py`
   - smoke `lane install` with default and explicit target paths
+
+## Archive Note
+
+Implemented in PR 35.

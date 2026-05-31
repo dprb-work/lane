@@ -3,7 +3,7 @@
 ## Metadata
 
 - Change id: `codex-skill-setup`
-- Status: `active`
+- Status: `archived`
 - Branch: `feat/codex-skill-setup`
 - Worktree: `/home/d/wt/lane/codex-skill-setup`
 - OpenSpec rationale:
@@ -57,3 +57,8 @@ corresponding CLI being present on `PATH`.
 - Verification expectations:
   - focused init and doctor tests
   - full repo verification
+
+## Archive Note
+
+Implemented and merged in PR 32. Follow-up PR 35 moved user-level asset
+installation from `lane init` to `lane install`.
