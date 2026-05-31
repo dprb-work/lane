@@ -125,8 +125,9 @@ const commandSchema = tool.schema.discriminatedUnion("name", [
   tool.schema.object({
     name: tool.schema.literal("review"),
     selector: selectorField,
-    reviewAgent: tool.schema.array(tool.schema.string()).optional().describe("Paseo provider mode/review agent names."),
-    reviewJudge: tool.schema.string().optional().describe("Paseo provider mode/review judge name."),
+    reviewAgent: tool.schema.array(tool.schema.string()).optional().describe("Reviewer prompt names from the configured reviewers directory."),
+    reviewersDir: tool.schema.string().optional().describe("Directory of reviewer prompt files. Defaults to LANE_REVIEWERS_DIR when set."),
+    reviewJudge: tool.schema.string().optional().describe("Name to report for the built-in review judge."),
   }),
   tool.schema.object({
     name: tool.schema.literal("finalize"),
@@ -202,6 +203,7 @@ function buildCommand(command: any, directory: string): string[] {
         "review",
         ...selector(command.selector, directory),
         ...(command.reviewAgent ?? []).flatMap((name: string) => option("--review-agent", name)),
+        ...option("--reviewers-dir", command.reviewersDir ? resolvePath(command.reviewersDir, directory) : undefined),
         ...option("--review-judge", command.reviewJudge),
       ]
       break
