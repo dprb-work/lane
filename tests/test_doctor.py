@@ -96,7 +96,7 @@ def test_run_doctor_warns_when_opencode_tool_is_missing(
     monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: missing)
     monkeypatch.setattr(
         "lane.doctor.compact_opencode_registration_note",
-        lambda: "register opencode tool: python3 scripts/register_opencode_tool.py",
+        lambda: "install opencode tool: lane install",
     )
     monkeypatch.setattr(
         "lane.doctor.shutil.which",
@@ -108,7 +108,7 @@ def test_run_doctor_warns_when_opencode_tool_is_missing(
     assert (
         "warn",
         "opencode tool",
-        "register opencode tool: python3 scripts/register_opencode_tool.py",
+        "install opencode tool: lane install",
     ) in _triples(diagnostics)
 
 

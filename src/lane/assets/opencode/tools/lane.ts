@@ -1,12 +1,12 @@
-import { spawn } from "node:child_process";
-import path from "node:path";
+import { spawn } from "node:child_process"
+import path from "node:path"
 
-import { tool } from "@opencode-ai/plugin";
+import { tool } from "@opencode-ai/plugin"
 
-type ArgValue = boolean | string | null | undefined;
+type ArgValue = boolean | string | null | undefined
 
-const REPO_ROOT = "__LANE_REPO_ROOT__";
-const LANE = process.env.LANE_BIN || path.join(REPO_ROOT, ".venv", "bin", "lane");
+const REPO_ROOT = "__LANE_REPO_ROOT__"
+const LANE = process.env.LANE_BIN || path.join(REPO_ROOT, ".venv", "bin", "lane")
 const JSON_COMMANDS = new Set([
   "doctor",
   "finalize",
@@ -16,35 +16,35 @@ const JSON_COMMANDS = new Set([
   "status",
   "sync",
   "verify",
-]);
+])
 
 function expandHome(raw: string): string {
-  if (!raw.startsWith("~/")) return raw;
-  const home = process.env.HOME;
-  if (!home) return raw;
-  return path.join(home, raw.slice(2));
+  if (!raw.startsWith("~/")) return raw
+  const home = process.env.HOME
+  if (!home) return raw
+  return path.join(home, raw.slice(2))
 }
 
 function resolvePath(raw: string, directory: string): string {
-  const expanded = expandHome(raw.trim());
-  if (path.isAbsolute(expanded)) return path.normalize(expanded);
-  return path.resolve(directory, expanded);
+  const expanded = expandHome(raw.trim())
+  if (path.isAbsolute(expanded)) return path.normalize(expanded)
+  return path.resolve(directory, expanded)
 }
 
 function option(flag: string, value: ArgValue): string[] {
-  if (value === undefined || value === null || value === false) return [];
-  if (value === true) return [flag];
-  const trimmed = value.trim();
-  return trimmed ? [flag, trimmed] : [];
+  if (value === undefined || value === null || value === false) return []
+  if (value === true) return [flag]
+  const trimmed = value.trim()
+  return trimmed ? [flag, trimmed] : []
 }
 
 function selector(raw: string | null | undefined, directory: string): string[] {
-  if (!raw?.trim()) return [];
-  const trimmed = raw.trim();
+  if (!raw?.trim()) return []
+  const trimmed = raw.trim()
   if (trimmed === "." || trimmed.startsWith("./") || trimmed.startsWith("../") || trimmed.startsWith("~/") || path.isAbsolute(trimmed)) {
-    return [resolvePath(trimmed, directory)];
+    return [resolvePath(trimmed, directory)]
   }
-  return [trimmed];
+  return [trimmed]
 }
 
 async function runLane(
@@ -57,38 +57,38 @@ async function runLane(
       cwd,
       signal,
       stdio: ["ignore", "pipe", "pipe"],
-    });
+    })
 
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
+    let stdout = ""
+    let stderr = ""
+    child.stdout.setEncoding("utf8")
+    child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
+      stdout += chunk
+    })
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
+      stderr += chunk
+    })
+    child.on("error", reject)
     child.on("close", (code) => {
       if (code !== 0) {
-        const output = stdout.trim();
+        const output = stdout.trim()
         if (args.includes("--json") && output) {
-          resolve(output);
-          return;
+          resolve(output)
+          return
         }
-        reject(new Error(stderr.trim() || `lane exited with code ${code}`));
-        return;
+        reject(new Error(stderr.trim() || `lane exited with code ${code}`))
+        return
       }
-      resolve(stdout.trim());
-    });
-  });
+      resolve(stdout.trim())
+    })
+  })
 }
 
 const selectorField = tool.schema
   .string()
   .optional()
-  .describe("Lane selector. Path-like values are resolved relative to the current OpenCode directory.");
+  .describe("Lane selector. Path-like values are resolved relative to the current OpenCode directory.")
 
 const commandSchema = tool.schema.discriminatedUnion("name", [
   tool.schema.object({
@@ -171,59 +171,59 @@ const commandSchema = tool.schema.discriminatedUnion("name", [
       .min(1)
       .describe("Escape hatch for newly added lane CLI arguments. First item must be a lane subcommand."),
   }),
-]);
+])
 
 function buildCommand(command: any, directory: string): string[] {
-  let argv: string[];
+  let argv: string[]
   switch (command.name) {
     case "init":
-      argv = ["init", ...(command.path ? [resolvePath(command.path, directory)] : [])];
-      break;
+      argv = ["init", ...(command.path ? [resolvePath(command.path, directory)] : [])]
+      break
     case "start":
-      argv = ["start", command.branch, ...option("--base", command.base)];
-      break;
+      argv = ["start", command.branch, ...option("--base", command.base)]
+      break
     case "status":
-      argv = ["status", ...selector(command.selector, directory)];
-      break;
+      argv = ["status", ...selector(command.selector, directory)]
+      break
     case "list":
-      argv = ["list"];
-      break;
+      argv = ["list"]
+      break
     case "doctor":
-      argv = ["doctor", ...(command.path ? [resolvePath(command.path, directory)] : [])];
-      break;
+      argv = ["doctor", ...(command.path ? [resolvePath(command.path, directory)] : [])]
+      break
     case "verify":
-      argv = ["verify", ...selector(command.selector, directory)];
-      break;
+      argv = ["verify", ...selector(command.selector, directory)]
+      break
     case "sync":
-      argv = ["sync", ...selector(command.selector, directory)];
-      break;
+      argv = ["sync", ...selector(command.selector, directory)]
+      break
     case "review":
       argv = [
         "review",
         ...selector(command.selector, directory),
         ...(command.reviewAgent ?? []).flatMap((name: string) => option("--review-agent", name)),
         ...option("--review-judge", command.reviewJudge),
-      ];
-      break;
+      ]
+      break
     case "finalize":
       argv = [
         "finalize",
         ...selector(command.selector, directory),
         ...option("--no-verify", command.noVerify),
         ...option("--force-with-lease", command.forceWithLease),
-      ];
-      break;
+      ]
+      break
     case "push":
       argv = [
         "push",
         ...selector(command.selector, directory),
         ...option("--no-verify", command.noVerify),
         ...option("--force-with-lease", command.forceWithLease),
-      ];
-      break;
+      ]
+      break
     case "cleanup":
-      argv = ["cleanup", ...selector(command.selector, directory), ...option("--delete-remote-branch", command.deleteRemoteBranch)];
-      break;
+      argv = ["cleanup", ...selector(command.selector, directory), ...option("--delete-remote-branch", command.deleteRemoteBranch)]
+      break
     case "abort":
       argv = [
         "abort",
@@ -231,13 +231,13 @@ function buildCommand(command: any, directory: string): string[] {
         ...option("--discard", command.discard),
         ...option("--close-pr", command.closePr),
         ...option("--delete-remote-branch", command.deleteRemoteBranch),
-      ];
-      break;
+      ]
+      break
     case "raw":
-      return command.argv;
+      return command.argv
   }
 
-  return JSON_COMMANDS.has(command.name) ? [...argv, "--json"] : argv;
+  return JSON_COMMANDS.has(command.name) ? [...argv, "--json"] : argv
 }
 
 export default tool({
@@ -247,14 +247,14 @@ export default tool({
     command: commandSchema.describe("Structured lane command to execute."),
   },
   async execute(args, context) {
-    const command = buildCommand(args.command, context.directory);
+    const command = buildCommand(args.command, context.directory)
 
     context.metadata({
       title: `lane ${args.command.name}`,
       metadata: { command: args.command.name },
-    });
+    })
 
-    const output = await runLane(command, context.directory, context.abort);
-    return [`tool: lane`, `command: lane ${command.join(" ")}`, output].join("\n");
+    const output = await runLane(command, context.directory, context.abort)
+    return [`tool: lane`, `command: lane ${command.join(" ")}`, output].join("\n")
   },
-});
+})

@@ -11,7 +11,6 @@ from lane.init import (
     AGENT_INSTRUCTIONS,
     AGENT_INSTRUCTIONS_HEADER,
     CODEX_SKILL_MARKER,
-    OPENCODE_TOOL_PLACEHOLDER,
     SHARED_VENV_SETUP_COMMAND,
     InitError,
     check_paseo_cli,
@@ -168,15 +167,18 @@ def test_ensure_opencode_tool_registration_creates_global_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "source.ts"
-    source.write_text(f"root={OPENCODE_TOOL_PLACEHOLDER}\n", encoding="utf-8")
+    source.write_text("root=__LANE_REPO_ROOT__\n", encoding="utf-8")
     monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/opencode")
-    monkeypatch.setattr("lane.init.opencode_tool_source_path", lambda: source)
+    monkeypatch.setattr(
+        "lane.init._asset_text",
+        lambda path: source.read_text(encoding="utf-8"),
+    )
 
     action = ensure_opencode_tool_registration(home=tmp_path)
 
     path = opencode_tool_path(home=tmp_path)
     assert action == "created"
-    assert OPENCODE_TOOL_PLACEHOLDER not in path.read_text(encoding="utf-8")
+    assert "__LANE_REPO_ROOT__" not in path.read_text(encoding="utf-8")
 
 
 def test_ensure_opencode_tool_registration_skips_when_opencode_is_missing(

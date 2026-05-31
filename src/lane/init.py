@@ -161,24 +161,13 @@ def lane_lite_schema_path(*, home: Path | None = None) -> Path:
     return home / ".local" / "share" / "openspec" / "schemas" / LANE_LITE_SCHEMA
 
 
-def opencode_tool_source_path() -> Path:
-    source = files("lane").joinpath("assets/opencode/tools/lane.ts")
-    with as_file(source) as path:
-        return path
-
-
 def compact_opencode_registration_note() -> str:
     if shutil.which("opencode") is None:
         return "opencode tool skipped: opencode not found on PATH"
     path = opencode_tool_path()
     if path.is_file():
         return f"opencode tool present: {path}"
-    script = (
-        Path(__file__).resolve().parents[2]
-        / "scripts"
-        / "register_opencode_tool.py"
-    )
-    return f"register opencode tool: python3 {script}"
+    return "install opencode tool: lane install"
 
 
 def codex_skill_path(*, home: Path | None = None) -> Path:
@@ -300,12 +289,9 @@ def ensure_opencode_tool_registration(
 ) -> str:
     if shutil.which("opencode") is None:
         return "skipped"
-    source = opencode_tool_source_path()
-    if not source.is_file():
-        return "missing-source"
 
     path = opencode_tool_path(home=home) if path is None else path
-    content = source.read_text(encoding="utf-8").replace(
+    content = _asset_text("assets/opencode/tools/lane.ts").replace(
         OPENCODE_TOOL_PLACEHOLDER,
         str(Path(__file__).resolve().parents[2]),
     )
@@ -466,5 +452,8 @@ def _version_tuple(version: str) -> tuple[int, int, int]:
 
 
 def _codex_skill() -> str:
-    source = files("lane").joinpath("assets/codex/skills/lane/SKILL.md")
-    return source.read_text(encoding="utf-8")
+    return _asset_text("assets/codex/skills/lane/SKILL.md")
+
+
+def _asset_text(path: str) -> str:
+    return files("lane").joinpath(path).read_text(encoding="utf-8")

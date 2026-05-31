@@ -126,18 +126,10 @@ It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
 directory is on `PATH`. It also runs `lane install` to refresh user-level lane
 assets. `lane init` is repo bootstrap and validation.
 
-`lane install` installs the lightweight OpenSpec schema, registers the OpenCode
-custom tool definition from this checkout when `opencode` is present on `PATH`,
-and writes the managed Codex skill when `codex` is present. You can also register
-the OpenCode tool manually:
-
-```bash
-python3 scripts/register_opencode_tool.py
-```
-
-The registration script renders this checkout path into `opencode/tools/lane.ts`
-and recreates `~/.config/opencode/tools/lane.ts` every time. Restart OpenCode or
-reload its config after registration so the tool definition refreshes.
+`lane install` installs the lightweight OpenSpec schema, registers the packaged
+OpenCode custom tool definition when `opencode` is present on `PATH`, and writes
+the managed Codex skill when `codex` is present. Restart OpenCode or reload its
+config after registration so the tool definition refreshes.
 
 Codex CLI uses a lighter setup: when `codex` is present on `PATH`, `lane install`
 writes a managed user skill at `~/.agents/skills/lane/SKILL.md`. Codex can use
