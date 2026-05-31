@@ -343,6 +343,8 @@ def handle_start(args: argparse.Namespace) -> int:
     _require_git_author_identity(Path.cwd())
     invocation = Path.cwd()
     rollback: list[tuple[str, Callable[[], None]]] = []
+    repo = "unknown"
+    pr_note = "deferred"
     try:
         worktree = create_worktree(
             branch.branch,
@@ -395,27 +397,24 @@ def handle_start(args: argparse.Namespace) -> int:
                 lambda: _remove_lane_state(worktree.path),
             )
         )
-        _commit_initial_lane_state(state)
-        repo = push_branch(state)
-        rollback.append(
-            (
-                f"delete remote branch {state.branch}",
-                lambda: delete_remote_branch(state.branch, state.path),
-            )
-        )
-        result = create_draft_pr(state)
-        rollback.append(
-            (
-                f"close draft PR {result.pr_url}",
-                lambda: close_pr(result.pr_url, state.path),
-            )
-        )
-        state = replace(state, pr=result.pr_url)
-        write_state(worktree.path, state)
+        if _commit_initial_lane_state(state):
+            rollback.clear()
+            repo = push_branch(state)
+            try:
+                result = create_draft_pr(state)
+            except ForgeError as error:
+                pr_note = f"deferred: {error}"
+            else:
+                state = replace(state, pr=result.pr_url)
+                write_state(worktree.path, state)
+                pr_note = result.pr_url
+        else:
+            rollback.clear()
+            pr_note = "deferred: no metadata changes to commit"
     except (CleanupError, ForgeError, OpenSpecError, OSError, PaseoError) as error:
         _rollback_start(rollback, error)
     print(f"repo: {repo}")
-    print(f"draft pr: {result.pr_url}")
+    print(f"draft pr: {pr_note}")
     _print_state(state)
     return 0
 
@@ -472,7 +471,7 @@ def _delete_local_branch(branch: str, *, cwd: Path) -> None:
         raise ForgeError(f"git branch delete failed: {message}")
 
 
-def _commit_initial_lane_state(state: LaneState) -> None:
+def _commit_initial_lane_state(state: LaneState) -> bool:
     result = subprocess.run(
         ["git", "add", "openspec/changes"],
         cwd=state.path,
@@ -482,6 +481,18 @@ def _commit_initial_lane_state(state: LaneState) -> None:
     )
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "git add failed"
+        raise ForgeError(f"initial lane commit failed: {message}")
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"],
+        cwd=state.path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return False
+    if result.returncode != 1:
+        message = result.stderr.strip() or result.stdout.strip() or "git diff failed"
         raise ForgeError(f"initial lane commit failed: {message}")
     result = subprocess.run(
         ["git", "commit", "-m", f"chore: start {state.id}"],
@@ -494,6 +505,7 @@ def _commit_initial_lane_state(state: LaneState) -> None:
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "git commit failed"
         raise ForgeError(f"initial lane commit failed: {message}")
+    return True
 
 
 def _require_git_author_identity(cwd: Path) -> None:
