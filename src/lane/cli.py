@@ -386,6 +386,7 @@ def handle_init(args: argparse.Namespace) -> int:
     result = run_init(Path(args.path))
     print(f"ignored state: {result.gitignore}")
     print(f"agent instructions {result.agents_action}: {result.agents}")
+    print(f"opencode tool {result.opencode_tool_action}: {result.opencode_tool}")
     print(f"codex skill {result.codex_skill_action}: {result.codex_skill}")
     print(f"paseo config {result.paseo_config_action}: {result.paseo_config}")
     print(f"lane-lite schema: {result.schema_dir}")

@@ -71,6 +71,8 @@ def _tool_check(tool: str) -> Diagnostic:
 
 
 def _opencode_tool_check() -> Diagnostic:
+    if shutil.which("opencode") is None:
+        return Diagnostic("ok", "opencode tool", compact_opencode_registration_note())
     path = opencode_tool_path()
     if not path.is_file():
         return Diagnostic("warn", "opencode tool", compact_opencode_registration_note())
@@ -95,7 +97,9 @@ def _opencode_tool_check() -> Diagnostic:
 
 
 def _codex_skill_check(workspace: Path) -> Diagnostic:
-    path = _find_codex_skill_path(workspace)
+    if shutil.which("codex") is None:
+        return Diagnostic("ok", "codex skill", compact_codex_skill_note(workspace))
+    path = codex_skill_path()
     if not path.is_file():
         return Diagnostic("warn", "codex skill", compact_codex_skill_note(workspace))
     try:
@@ -109,16 +113,6 @@ def _codex_skill_check(workspace: Path) -> Diagnostic:
             f"custom skill not managed by lane: {path}",
         )
     return Diagnostic("ok", "codex skill", str(path))
-
-
-def _find_codex_skill_path(workspace: Path) -> Path:
-    for candidate_root in (workspace, *workspace.parents):
-        candidate = codex_skill_path(candidate_root)
-        if candidate.is_file():
-            return candidate
-        if (candidate_root / ".git").exists():
-            break
-    return codex_skill_path(workspace)
 
 
 def _paseo_check(workspace: Path, runner: Runner) -> Diagnostic:

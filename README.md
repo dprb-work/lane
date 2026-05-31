@@ -62,8 +62,9 @@ Paseo and OpenSpec CLIs into a user-local npm prefix, creates a repo-local
 It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
 directory is on `PATH`. `lane init` is repo bootstrap and validation.
 
-Register the OpenCode custom tool definition from this checkout when you want
-OpenCode's typed `functions.lane` surface:
+`lane init` registers the OpenCode custom tool definition from this checkout when
+`opencode` is present on `PATH` and you want OpenCode's typed `functions.lane`
+surface. You can also register it manually:
 
 ```bash
 python3 scripts/register_opencode_tool.py
@@ -73,10 +74,10 @@ The registration script renders this checkout path into `opencode/tools/lane.ts`
 and recreates `~/.config/opencode/tools/lane.ts` every time. Restart OpenCode or
 reload its config after registration so the tool definition refreshes.
 
-Codex CLI uses a lighter setup: `lane init` writes a repo-local skill at
-`.agents/skills/lane/SKILL.md`. Codex discovers repo skills from trusted
-projects and can use the skill to follow the `lane` workflow through normal shell
-commands. No MCP server or Codex plugin is required for this basic integration.
+Codex CLI uses a lighter setup: when `codex` is present on `PATH`, `lane init`
+writes a managed user skill at `~/.agents/skills/lane/SKILL.md`. Codex can use
+the skill to follow the `lane` workflow through normal shell commands. No MCP
+server or Codex plugin is required for this basic integration.
 
 Initialize repo support once:
 
@@ -86,15 +87,16 @@ lane init
 
 `lane init` ensures `.lane/` is ignored, creates or updates the repo-local
 `AGENTS.md` with a managed Paseo-native workflow block, creates or updates
-`paseo.json` with the managed shared-venv setup command, creates or updates the
-managed Codex skill, installs the lightweight OpenSpec schema if missing, reports
-missing tools, reports Codex skill and OpenCode tool registration status, and
-prints Paseo version information. When the managed `AGENTS.md` block already
-exists, `lane init` replaces it with the current instructions. When a user-owned
-Codex skill already exists at `.agents/skills/lane/SKILL.md`, `lane init` leaves
-it in place and reports the skill as skipped. It errors when the installed Paseo
-CLI is below the minimum supported version and warns when a newer package is
-available online. It does not install or upgrade tools.
+`paseo.json` with the managed shared-venv setup command, installs the lightweight
+OpenSpec schema if missing, and registers installed agent runtimes. When
+`opencode` is present, it creates or updates the global OpenCode tool at
+`~/.config/opencode/tools/lane.ts`. When `codex` is present, it creates or
+updates the global Codex skill at `~/.agents/skills/lane/SKILL.md`. If either CLI
+is missing, that runtime registration is skipped. When a user-owned Codex skill
+already exists at that path, `lane init` leaves it in place and reports the skill
+as skipped. It errors when the installed Paseo CLI is below the minimum supported
+version and warns when a newer package is available online. It does not install
+or upgrade tools.
 
 Start a new Paseo-backed lane:
 
@@ -158,13 +160,12 @@ warnings.
 
 `lane doctor [path]` runs read-only environment diagnostics and prints compact
 `ok`, `warn`, and `fail` lines for required tools, Paseo CLI and daemon access,
-OpenSpec, OpenCode tool registration, Codex skill setup, forge CLI availability
-and auth for the detected remote provider, forge repository readability, GitHub
-ruleset readability, verification command discovery, and lane state validity when
+OpenSpec, installed-runtime registration, forge CLI availability and auth for the
+detected remote provider, forge repository readability, GitHub ruleset
+readability, verification command discovery, and lane state validity when
 `.lane/state.yaml` is present. It exits non-zero when required checks fail, but
-warnings such as missing Codex skill setup, missing OpenCode tool registration,
-missing lane state outside a lane, or unreadable GitHub rulesets do not fail the
-command.
+warnings such as missing registration for an installed optional runtime, missing
+lane state outside a lane, or unreadable GitHub rulesets do not fail the command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `python3 scripts/verify.py` when that script exists, then falls back to

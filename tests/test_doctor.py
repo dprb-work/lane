@@ -24,6 +24,7 @@ def test_run_doctor_reports_ok_diagnostics(tmp_path: Path, monkeypatch) -> None:
     write_state(tmp_path, _state(tmp_path))
 
     monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: opencode_tool)
+    monkeypatch.setattr("lane.doctor.codex_skill_path", lambda: codex_skill)
     monkeypatch.setattr(
         "lane.doctor.shutil.which",
         lambda tool, path=None: f"/bin/{tool}",
@@ -97,7 +98,10 @@ def test_run_doctor_warns_when_opencode_tool_is_missing(
         "lane.doctor.compact_opencode_registration_note",
         lambda: "register opencode tool: python3 scripts/register_opencode_tool.py",
     )
-    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: "/bin/opencode" if tool == "opencode" else None,
+    )
 
     diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
 
@@ -112,7 +116,12 @@ def test_run_doctor_warns_when_codex_skill_is_missing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+    missing = tmp_path / "SKILL.md"
+    monkeypatch.setattr("lane.doctor.codex_skill_path", lambda: missing)
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: "/bin/codex" if tool == "codex" else None,
+    )
 
     diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
 
@@ -130,7 +139,11 @@ def test_run_doctor_warns_for_custom_codex_skill(
     skill = tmp_path / ".agents" / "skills" / "lane" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: lane\n---\ncustom\n", encoding="utf-8")
-    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+    monkeypatch.setattr("lane.doctor.codex_skill_path", lambda: skill)
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: "/bin/codex" if tool == "codex" else None,
+    )
 
     diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
 
@@ -141,7 +154,7 @@ def test_run_doctor_warns_for_custom_codex_skill(
     ) in _triples(diagnostics)
 
 
-def test_run_doctor_finds_codex_skill_from_subdirectory(
+def test_run_doctor_reports_global_codex_skill_from_subdirectory(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -151,11 +164,36 @@ def test_run_doctor_finds_codex_skill_from_subdirectory(
     subdirectory = tmp_path / "src" / "pkg"
     subdirectory.mkdir(parents=True)
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+    monkeypatch.setattr("lane.doctor.codex_skill_path", lambda: skill)
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: "/bin/codex" if tool == "codex" else None,
+    )
 
     diagnostics = run_doctor(subdirectory, runner=lambda argv, cwd: _result())
 
     assert ("ok", "codex skill", str(skill)) in _triples(diagnostics)
+
+
+def test_run_doctor_skips_optional_agent_integrations_when_cli_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+
+    diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
+    triples = _triples(diagnostics)
+
+    assert (
+        "ok",
+        "opencode tool",
+        "opencode tool skipped: opencode not found on PATH",
+    ) in triples
+    assert (
+        "ok",
+        "codex skill",
+        "codex skill skipped: codex not found on PATH",
+    ) in triples
 
 
 def test_run_doctor_reports_registered_opencode_tool(
@@ -165,7 +203,10 @@ def test_run_doctor_reports_registered_opencode_tool(
     tool = tmp_path / "lane.ts"
     tool.write_text(str(Path(doctor.__file__).resolve().parents[2]), encoding="utf-8")
     monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: tool)
-    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: "/bin/opencode" if tool == "opencode" else None,
+    )
 
     diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
 
@@ -179,7 +220,10 @@ def test_run_doctor_warns_for_stale_opencode_tool(
     tool = tmp_path / "lane.ts"
     tool.write_text("const REPO_ROOT = '/other/checkout';", encoding="utf-8")
     monkeypatch.setattr("lane.doctor.opencode_tool_path", lambda: tool)
-    monkeypatch.setattr("lane.doctor.shutil.which", lambda tool, path=None: None)
+    monkeypatch.setattr(
+        "lane.doctor.shutil.which",
+        lambda tool, path=None: "/bin/opencode" if tool == "opencode" else None,
+    )
 
     diagnostics = run_doctor(tmp_path, runner=lambda argv, cwd: _result())
 

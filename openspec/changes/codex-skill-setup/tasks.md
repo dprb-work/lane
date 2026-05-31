@@ -8,7 +8,8 @@
 
 ## Tasks
 
-- [x] Add managed Codex skill creation to `lane init`.
-- [x] Add `lane doctor` diagnostics for Codex skill setup.
+- [x] Add managed global Codex skill creation to `lane init` when Codex is installed.
+- [x] Add `lane doctor` diagnostics for installed-runtime registration.
+- [x] Register the OpenCode tool from `lane init` when OpenCode is installed.
 - [x] Update README guidance.
 - [x] Run full verification.

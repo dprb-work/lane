@@ -14,6 +14,7 @@ REPORTED_TOOLS = ("paseo", "openspec", "git", "gh", "glab")
 AGENT_INSTRUCTIONS_HEADER = "<!-- lane:instructions:start -->"
 AGENT_INSTRUCTIONS_FOOTER = "<!-- lane:instructions:end -->"
 CODEX_SKILL_MARKER = "<!-- lane:codex-skill -->"
+OPENCODE_TOOL_PLACEHOLDER = "__LANE_REPO_ROOT__"
 PASEO_CONFIG_FILE = "paseo.json"
 SHARED_VENV_SETUP_MARKER = "# lane:shared-venv"
 SHARED_VENV_SETUP_COMMAND = """# lane:shared-venv
@@ -73,6 +74,8 @@ class InitResult:
     gitignore: Path
     agents: Path
     agents_action: str
+    opencode_tool: Path
+    opencode_tool_action: str
     codex_skill: Path
     codex_skill_action: str
     paseo_config: Path
@@ -86,11 +89,13 @@ class InitResult:
 
 def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     target = target.resolve()
+    home_root = Path.home() if home is None else home
     ensure_lane_ignored(target)
     agents_action = ensure_agent_instructions(target)
-    codex_skill_action = ensure_codex_skill(target)
+    opencode_tool_action = ensure_opencode_tool_registration(home=home_root)
+    codex_skill_action = ensure_codex_skill(home=home_root)
     paseo_config_action = ensure_paseo_shared_venv_setup(target)
-    schema_dir = install_lane_lite_schema(Path.home() if home is None else home)
+    schema_dir = install_lane_lite_schema(home_root)
     paseo_check = check_paseo_cli(target)
     missing_tools = tuple(
         tool
@@ -102,7 +107,9 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
         gitignore=target / ".gitignore",
         agents=target / "AGENTS.md",
         agents_action=agents_action,
-        codex_skill=codex_skill_path(target),
+        opencode_tool=opencode_tool_path(home=home_root),
+        opencode_tool_action=opencode_tool_action,
+        codex_skill=codex_skill_path(home=home_root),
         codex_skill_action=codex_skill_action,
         paseo_config=target / PASEO_CONFIG_FILE,
         paseo_config_action=paseo_config_action,
@@ -114,11 +121,19 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     )
 
 
-def opencode_tool_path() -> Path:
-    return Path("~/.config/opencode/tools/lane.ts").expanduser()
+def opencode_tool_path(*, home: Path | None = None) -> Path:
+    if home is None:
+        return Path("~/.config/opencode/tools/lane.ts").expanduser()
+    return home / ".config" / "opencode" / "tools" / "lane.ts"
+
+
+def opencode_tool_source_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "opencode" / "tools" / "lane.ts"
 
 
 def compact_opencode_registration_note() -> str:
+    if shutil.which("opencode") is None:
+        return "opencode tool skipped: opencode not found on PATH"
     path = opencode_tool_path()
     if path.is_file():
         return f"opencode tool present: {path}"
@@ -130,12 +145,16 @@ def compact_opencode_registration_note() -> str:
     return f"register opencode tool: python3 {script}"
 
 
-def codex_skill_path(target: Path) -> Path:
-    return target / ".agents" / "skills" / "lane" / "SKILL.md"
+def codex_skill_path(*, home: Path | None = None) -> Path:
+    if home is None:
+        return Path("~/.agents/skills/lane/SKILL.md").expanduser()
+    return home / ".agents" / "skills" / "lane" / "SKILL.md"
 
 
 def compact_codex_skill_note(target: Path) -> str:
-    path = codex_skill_path(target.resolve())
+    if shutil.which("codex") is None:
+        return "codex skill skipped: codex not found on PATH"
+    path = codex_skill_path()
     if path.is_file():
         return f"codex skill present: {path}"
     return f"install codex skill: lane init {target.resolve()}"
@@ -238,8 +257,36 @@ def ensure_agent_instructions(target: Path) -> str:
     return "created"
 
 
-def ensure_codex_skill(target: Path) -> str:
-    path = codex_skill_path(target)
+def ensure_opencode_tool_registration(*, home: Path | None = None) -> str:
+    if shutil.which("opencode") is None:
+        return "skipped"
+    source = opencode_tool_source_path()
+    if not source.is_file():
+        return "missing-source"
+
+    path = opencode_tool_path(home=home)
+    content = source.read_text(encoding="utf-8").replace(
+        OPENCODE_TOOL_PLACEHOLDER,
+        str(Path(__file__).resolve().parents[2]),
+    )
+    if path.exists() or path.is_symlink():
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if existing == content and not path.is_symlink():
+            return "unchanged"
+        path.unlink()
+        action = "replaced"
+    else:
+        action = "created"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return action
+
+
+def ensure_codex_skill(*, home: Path | None = None) -> str:
+    if shutil.which("codex") is None:
+        return "skipped"
+    path = codex_skill_path(home=home)
     if path.exists():
         existing = path.read_text(encoding="utf-8")
         if CODEX_SKILL_MARKER not in existing:

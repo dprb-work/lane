@@ -9,6 +9,7 @@ import pytest
 from lane.init import (
     AGENT_INSTRUCTIONS_HEADER,
     CODEX_SKILL_MARKER,
+    OPENCODE_TOOL_PLACEHOLDER,
     SHARED_VENV_SETUP_COMMAND,
     InitError,
     check_paseo_cli,
@@ -18,8 +19,10 @@ from lane.init import (
     ensure_agent_instructions,
     ensure_codex_skill,
     ensure_lane_ignored,
+    ensure_opencode_tool_registration,
     ensure_paseo_shared_venv_setup,
     install_lane_lite_schema,
+    opencode_tool_path,
     run_init,
 )
 
@@ -64,7 +67,10 @@ def test_run_init_reports_required_tools(
     result = run_init(tmp_path, home=tmp_path)
 
     assert result.missing_tools == ("openspec", "gh", "glab")
+    assert result.opencode_tool == tmp_path / ".config/opencode/tools/lane.ts"
+    assert result.opencode_tool_action == "skipped"
     assert result.codex_skill == tmp_path / ".agents/skills/lane/SKILL.md"
+    assert result.codex_skill_action == "skipped"
     assert result.paseo_config == tmp_path / "paseo.json"
 
 
@@ -138,10 +144,43 @@ def test_compact_tool_requirement_note_explains_provider_specific_clis() -> None
     assert "do not need both" in note
 
 
-def test_ensure_codex_skill_creates_managed_skill(tmp_path: Path) -> None:
-    action = ensure_codex_skill(tmp_path)
+def test_ensure_opencode_tool_registration_creates_global_tool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.ts"
+    source.write_text(f"root={OPENCODE_TOOL_PLACEHOLDER}\n", encoding="utf-8")
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/opencode")
+    monkeypatch.setattr("lane.init.opencode_tool_source_path", lambda: source)
 
-    path = codex_skill_path(tmp_path)
+    action = ensure_opencode_tool_registration(home=tmp_path)
+
+    path = opencode_tool_path(home=tmp_path)
+    assert action == "created"
+    assert OPENCODE_TOOL_PLACEHOLDER not in path.read_text(encoding="utf-8")
+
+
+def test_ensure_opencode_tool_registration_skips_when_opencode_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: None)
+
+    action = ensure_opencode_tool_registration(home=tmp_path)
+
+    assert action == "skipped"
+    assert not opencode_tool_path(home=tmp_path).exists()
+
+
+def test_ensure_codex_skill_creates_managed_skill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/codex")
+
+    action = ensure_codex_skill(home=tmp_path)
+
+    path = codex_skill_path(home=tmp_path)
     text = path.read_text(encoding="utf-8")
     assert action == "created"
     assert path == tmp_path / ".agents/skills/lane/SKILL.md"
@@ -150,32 +189,58 @@ def test_ensure_codex_skill_creates_managed_skill(tmp_path: Path) -> None:
     assert "lane start <type>/<slug>" in text
 
 
-def test_ensure_codex_skill_replaces_managed_skill(tmp_path: Path) -> None:
-    path = codex_skill_path(tmp_path)
+def test_ensure_codex_skill_replaces_managed_skill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/codex")
+    path = codex_skill_path(home=tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text(f"old\n{CODEX_SKILL_MARKER}\n", encoding="utf-8")
 
-    action = ensure_codex_skill(tmp_path)
+    action = ensure_codex_skill(home=tmp_path)
 
     assert action == "replaced"
     assert "old" not in path.read_text(encoding="utf-8")
 
 
-def test_ensure_codex_skill_skips_custom_skill(tmp_path: Path) -> None:
-    path = codex_skill_path(tmp_path)
+def test_ensure_codex_skill_skips_custom_skill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/codex")
+    path = codex_skill_path(home=tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text("---\nname: lane\n---\ncustom\n", encoding="utf-8")
 
-    action = ensure_codex_skill(tmp_path)
+    action = ensure_codex_skill(home=tmp_path)
 
     assert action == "skipped"
     assert "custom" in path.read_text(encoding="utf-8")
 
 
-def test_compact_codex_skill_note(tmp_path: Path) -> None:
+def test_ensure_codex_skill_skips_when_codex_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: None)
+
+    action = ensure_codex_skill(home=tmp_path)
+
+    assert action == "skipped"
+    assert not codex_skill_path(home=tmp_path).exists()
+
+
+def test_compact_codex_skill_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/codex")
+    monkeypatch.setattr("lane.init.codex_skill_path", lambda: tmp_path / "SKILL.md")
+
     assert compact_codex_skill_note(tmp_path).startswith("install codex skill:")
 
-    ensure_codex_skill(tmp_path)
+    (tmp_path / "SKILL.md").write_text(CODEX_SKILL_MARKER, encoding="utf-8")
 
     assert compact_codex_skill_note(tmp_path).startswith("codex skill present:")
 
