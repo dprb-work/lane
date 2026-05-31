@@ -165,6 +165,7 @@ def test_start_rolls_back_when_initial_commit_fails(
         lambda state: (_ for _ in ()).throw(cli.ForgeError("commit failed")),
     )
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+    monkeypatch.setattr(cli, "_delete_local_branch", lambda branch, *, cwd: None)
     monkeypatch.setattr(
         cli,
         "push_branch",
@@ -207,6 +208,7 @@ def test_start_does_not_write_state_when_spec_creation_fails(
         raise OpenSpecError("spec failed")
 
     archived: list[str] = []
+    deleted_branches: list[str] = []
 
     def fake_archive_worktree(
         name: str, *, cwd: Path | None = None
@@ -219,10 +221,16 @@ def test_start_does_not_write_state_when_spec_creation_fails(
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+    monkeypatch.setattr(
+        cli,
+        "_delete_local_branch",
+        lambda branch, *, cwd: deleted_branches.append(branch),
+    )
 
     assert cli.main(["start", "fix/login"]) == 2
     assert not (workspace / ".lane" / "state.yaml").exists()
     assert archived == ["login"]
+    assert deleted_branches == ["fix/login"]
 
 
 def test_start_rolls_back_when_branch_rename_fails(
@@ -241,6 +249,7 @@ def test_start_rolls_back_when_branch_rename_fails(
         return PaseoWorktree(name="login", branch="login", path=workspace)
 
     archived: list[str] = []
+    deleted_branches: list[str] = []
 
     def fake_archive_worktree(
         name: str, *, cwd: Path | None = None
@@ -259,15 +268,22 @@ def test_start_rolls_back_when_branch_rename_fails(
         ),
     )
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+    monkeypatch.setattr(
+        cli,
+        "_delete_local_branch",
+        lambda branch, *, cwd: deleted_branches.append(branch),
+    )
 
     assert cli.main(["start", "fix/login"]) == 2
     assert not (workspace / ".lane" / "state.yaml").exists()
     assert archived == ["login"]
+    assert deleted_branches == ["login"]
 
 
 def test_start_reports_rollback_failure_when_spec_creation_fails(
     tmp_path: Path,
     monkeypatch,
+    capsys,
 ) -> None:
     workspace = tmp_path / "workspace"
 
@@ -299,9 +315,90 @@ def test_start_reports_rollback_failure_when_spec_creation_fails(
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
+    monkeypatch.setattr(cli, "_delete_local_branch", lambda branch, *, cwd: None)
 
     assert cli.main(["start", "fix/login"]) == 2
     assert not (workspace / ".lane" / "state.yaml").exists()
+    error = capsys.readouterr().err
+    assert "spec failed" in error
+    assert "rollback failed" in error
+    assert "archive failed" in error
+
+
+def test_start_rolls_back_remote_branch_when_draft_pr_creation_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
+        workspace.mkdir()
+        return PaseoWorktree(name="login", branch=branch, path=workspace)
+
+    def fake_create_spec(
+        name: str,
+        *,
+        schema: str,
+        description: str,
+        cwd: Path,
+    ) -> None:
+        (cwd / "openspec" / "changes" / name).mkdir(parents=True)
+
+    archived: list[str] = []
+    deleted_local: list[str] = []
+    deleted_remote: list[str] = []
+    closed_prs: list[str] = []
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
+    monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(
+        cli,
+        "_commit_initial_lane_state",
+        lambda state: None,
+    )
+    monkeypatch.setattr(cli, "push_branch", lambda state: "acme/app")
+    monkeypatch.setattr(
+        cli,
+        "create_draft_pr",
+        lambda state: (_ for _ in ()).throw(cli.ForgeError("draft failed")),
+    )
+    monkeypatch.setattr(
+        cli,
+        "delete_remote_branch",
+        lambda branch, workspace: deleted_remote.append(branch),
+    )
+    monkeypatch.setattr(
+        cli,
+        "archive_worktree",
+        lambda name, *, cwd: archived.append(name),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_delete_local_branch",
+        lambda branch, *, cwd: deleted_local.append(branch),
+    )
+    monkeypatch.setattr(
+        cli,
+        "close_pr",
+        lambda pr_url, workspace: closed_prs.append(pr_url),
+    )
+
+    assert cli.main(["start", "fix/login"]) == 2
+
+    assert deleted_remote == ["fix/login"]
+    assert archived == ["login"]
+    assert deleted_local == ["fix/login"]
+    assert closed_prs == []
+    assert not (workspace / ".lane" / "state.yaml").exists()
+    assert not (workspace / "openspec" / "changes" / "login").exists()
 
 
 def test_start_preflights_git_author_identity_before_worktree_creation(

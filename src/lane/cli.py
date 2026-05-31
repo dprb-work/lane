@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -306,72 +308,135 @@ def build_parser() -> argparse.ArgumentParser:
 def handle_start(args: argparse.Namespace) -> int:
     branch = parse_branch(args.branch)
     _require_git_author_identity(Path.cwd())
-    worktree = create_worktree(
-        branch.branch,
-        base=args.base,
-        cwd=Path.cwd(),
-        worktree_slug=branch.slug,
-    )
-    if worktree.branch != branch.branch:
-        try:
-            rename_current_branch(branch.branch, cwd=worktree.path)
-        except PaseoError as error:
-            try:
-                archive_worktree(worktree.name, cwd=Path.cwd())
-            except PaseoError as archive_error:
-                raise PaseoError(
-                    "branch rename failed and rollback archive failed: "
-                    f"{error}; {archive_error}"
-                ) from error
-            raise
-        worktree = replace(worktree, branch=branch.branch)
-    state = _new_lane_state(
-        branch=branch.branch,
-        lane_id=branch.slug,
-        base=args.base,
-        path=worktree.path,
-        pr=None,
-    )
+    invocation = Path.cwd()
+    rollback: list[tuple[str, Callable[[], None]]] = []
     try:
+        worktree = create_worktree(
+            branch.branch,
+            base=args.base,
+            cwd=invocation,
+            worktree_slug=branch.slug,
+        )
+        current_branch = {"name": worktree.branch}
+        rollback.append(
+            (
+                "delete local branch",
+                lambda: _delete_local_branch(current_branch["name"], cwd=invocation),
+            )
+        )
+        rollback.append(
+            (
+                f"archive worktree {worktree.name}",
+                lambda: archive_worktree(worktree.name, cwd=invocation),
+            )
+        )
+
+        if worktree.branch != branch.branch:
+            rename_current_branch(branch.branch, cwd=worktree.path)
+            current_branch["name"] = branch.branch
+            worktree = replace(worktree, branch=branch.branch)
+
+        state = _new_lane_state(
+            branch=branch.branch,
+            lane_id=branch.slug,
+            base=args.base,
+            path=worktree.path,
+            pr=None,
+        )
         create_spec(
             branch.slug,
             schema=branch.spec_schema,
             description=f"Lane for {branch.branch}",
             cwd=worktree.path,
         )
-    except OpenSpecError as error:
-        try:
-            archive_worktree(worktree.name, cwd=Path.cwd())
-        except PaseoError as archive_error:
-            raise OpenSpecError(
-                "spec creation failed and rollback archive failed: "
-                f"{error}; {archive_error}"
-            ) from error
-        raise
-    write_state(worktree.path, state)
-    try:
+        rollback.append(
+            (
+                f"remove spec {branch.slug}",
+                lambda: _remove_spec_change(worktree.path, branch.slug),
+            )
+        )
+        write_state(worktree.path, state)
+        rollback.append(
+            (
+                f"remove lane state {branch.slug}",
+                lambda: _remove_lane_state(worktree.path),
+            )
+        )
         _commit_initial_lane_state(state)
-    except ForgeError as error:
-        try:
-            archive_worktree(worktree.name, cwd=Path.cwd())
-        except PaseoError as archive_error:
-            raise ForgeError(
-                "initial lane commit failed and rollback archive failed: "
-                f"{error}; {archive_error}"
-            ) from error
-        raise
-    try:
         repo = push_branch(state)
+        rollback.append(
+            (
+                f"delete remote branch {state.branch}",
+                lambda: delete_remote_branch(state.branch, state.path),
+            )
+        )
         result = create_draft_pr(state)
-    except ForgeError as error:
-        print(f"warning: draft PR not created: {error}", file=sys.stderr)
-    else:
+        rollback.append(
+            (
+                f"close draft PR {result.pr_url}",
+                lambda: close_pr(result.pr_url, state.path),
+            )
+        )
         state = replace(state, pr=result.pr_url)
         write_state(worktree.path, state)
-        print(f"repo: {repo}")
-        print(f"draft pr: {result.pr_url}")
+    except (CleanupError, ForgeError, OpenSpecError, OSError, PaseoError) as error:
+        _rollback_start(rollback, error)
+    print(f"repo: {repo}")
+    print(f"draft pr: {result.pr_url}")
     _print_state(state)
     return 0
+
+
+def _rollback_start(
+    cleanups: list[tuple[str, Callable[[], None]]],
+    error: CleanupError | ForgeError | OpenSpecError | OSError | PaseoError,
+) -> None:
+    failures: list[str] = []
+    for label, cleanup in reversed(cleanups):
+        try:
+            cleanup()
+        except Exception as cleanup_error:  # noqa: BLE001 - report every rollback failure.
+            failures.append(f"{label}: {cleanup_error}")
+    if failures:
+        message = f"{error}; rollback failed: {'; '.join(failures)}"
+        if isinstance(error, OSError):
+            raise ForgeError(message) from error
+        raise type(error)(message) from error
+    if isinstance(error, OSError):
+        raise ForgeError(str(error)) from error
+    raise error
+
+
+def _remove_lane_state(workspace: Path) -> None:
+    state_file = workspace / ".lane" / "state.yaml"
+    if state_file.exists():
+        state_file.unlink()
+    state_dir = state_file.parent
+    if state_dir.exists() and not any(state_dir.iterdir()):
+        state_dir.rmdir()
+
+
+def _remove_spec_change(workspace: Path, spec: str) -> None:
+    path = active_spec_path(workspace, spec)
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def _delete_local_branch(branch: str, *, cwd: Path) -> None:
+    result = subprocess.run(
+        ["git", "branch", "-D", branch],
+        cwd=cwd,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or "git branch delete failed"
+        )
+        raise ForgeError(f"git branch delete failed: {message}")
 
 
 def _commit_initial_lane_state(state: LaneState) -> None:
