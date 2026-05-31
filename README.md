@@ -390,10 +390,11 @@ scripts/dev-lane.sh start <type>/<slug> --base main
 The helper runs this checkout's source via `PYTHONPATH=src` so a shared editable
 venv cannot accidentally execute another worktree's installed `lane` entrypoint.
 After the lane exists, work from the Paseo workspace and keep using the helper for
-lifecycle commands: `scripts/dev-lane.sh status`, `scripts/dev-lane.sh run --
-<command>`, `scripts/dev-lane.sh verify`, `scripts/dev-lane.sh push`,
-`scripts/dev-lane.sh review`, `scripts/dev-lane.sh finalize`, and
-`scripts/dev-lane.sh cleanup`.
+all lifecycle commands. For example: `scripts/dev-lane.sh status`,
+`scripts/dev-lane.sh run -- <command>`, `scripts/dev-lane.sh verify`,
+`scripts/dev-lane.sh sync`, `scripts/dev-lane.sh push`, `scripts/dev-lane.sh
+review`, `scripts/dev-lane.sh finalize`, `scripts/dev-lane.sh cleanup`, and
+`scripts/dev-lane.sh abort`.
 
 Historical OpenSpec records may mention legacy workspace paths. Those paths
 document where old work happened; do not recreate them or add compatibility code
