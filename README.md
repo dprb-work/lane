@@ -161,11 +161,13 @@ Start a new Paseo-backed lane:
 lane start feat/workspace-status --base main
 ```
 
-`lane start` asks Paseo to create the workspace, writes `.lane/state.yaml`, and
-creates the required OpenSpec change with the schema inferred from the branch
-prefix. It then commits the initial spec files, best-effort pushes the new branch,
-and opens a draft PR/MR with non-empty lane metadata. If the forge handoff is
-unavailable, lane state is still written and a warning is printed.
+`lane start` asks Paseo to create the workspace, creates the required OpenSpec
+change with the schema inferred from the branch prefix, writes `.lane/state.yaml`,
+commits the initial spec files, pushes the new branch, and opens a draft PR/MR
+with non-empty lane metadata. Startup is transactional: if any step fails after
+local or forge artifacts are created, `lane start` rolls back the artifacts it
+created before returning the original error, with rollback failures appended when
+cleanup cannot fully complete.
 
 Attach an existing Paseo workspace to lane state:
 
