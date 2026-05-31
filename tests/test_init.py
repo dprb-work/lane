@@ -23,6 +23,7 @@ from lane.init import (
     ensure_opencode_tool_registration,
     ensure_paseo_shared_venv_setup,
     install_lane_lite_schema,
+    install_lane_schemas,
     opencode_tool_path,
     run_init,
     run_install,
@@ -53,6 +54,14 @@ def test_install_lane_lite_schema(tmp_path: Path) -> None:
     assert (schema_dir / "templates/lane.md").exists()
 
 
+def test_install_lane_schemas_copies_schema_bundle(tmp_path: Path) -> None:
+    schema_dir = install_lane_schemas(tmp_path / "schemas")
+
+    assert schema_dir == tmp_path / "schemas"
+    assert (schema_dir / "lane-lite/schema.yaml").exists()
+    assert (schema_dir / "lane-lite/templates/lane.md").exists()
+
+
 def test_run_init_reports_required_tools(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -81,7 +90,7 @@ def test_run_install_reports_user_assets(
 
     result = run_install(home=tmp_path)
 
-    assert result.schema_dir == tmp_path / ".local/share/openspec/schemas/lane-lite"
+    assert result.schema_dir == tmp_path / ".local/share/openspec/schemas"
     assert result.opencode_tool == tmp_path / ".config/opencode/tools/lane.ts"
     assert result.opencode_tool_action == "skipped"
     assert result.codex_skill == tmp_path / ".agents/skills/lane/SKILL.md"

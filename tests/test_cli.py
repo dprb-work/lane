@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from lane import cli
@@ -62,7 +63,7 @@ def test_start_uses_paseo_create_and_writes_state(
     monkeypatch.setattr(
         cli,
         "_commit_initial_lane_state",
-        lambda state: committed.append(state.path),
+        lambda state: committed.append(state.path) or True,
     )
     monkeypatch.setattr(
         cli,
@@ -99,7 +100,87 @@ def test_start_uses_paseo_create_and_writes_state(
     assert drafts == ["fix/login"]
 
 
+def test_install_supports_openspec_schema_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_install_for_paths(
+        *,
+        home: Path,
+        opencode_tool: Path,
+        codex_skill: Path,
+        schema_dir: Path,
+        schema_bundle: bool = False,
+    ):
+        @dataclass(frozen=True)
+        class Result:
+            opencode_tool: Path
+            opencode_tool_action: str
+            codex_skill: Path
+            codex_skill_action: str
+            schema_dir: Path
+
+        captured["schema_dir"] = schema_dir
+        captured["schema_bundle"] = schema_bundle
+        return Result(
+            opencode_tool=opencode_tool,
+            opencode_tool_action="skipped",
+            codex_skill=codex_skill,
+            codex_skill_action="skipped",
+            schema_dir=schema_dir,
+        )
+
+    monkeypatch.setattr(cli, "run_install_for_paths", fake_run_install_for_paths)
+
+    assert cli.main(
+        [
+            "install",
+            "--home",
+            str(tmp_path / "home"),
+            "--openspec-schemas-dir",
+            str(tmp_path / "openspec-schemas"),
+        ]
+    ) == 0
+
+    assert captured["schema_dir"] == tmp_path / "openspec-schemas"
+    assert captured["schema_bundle"] is True
+
+
 def test_commit_initial_lane_state_commits_spec_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = _state(tmp_path, branch="fix/login")
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(
+        argv: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        text: bool,
+        capture_output: bool,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, cwd))
+        if argv == ["git", "diff", "--cached", "--quiet"]:
+            return subprocess.CompletedProcess(argv, 1, "", "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    assert cli._commit_initial_lane_state(state) is True
+
+    assert calls == [
+        (["git", "add", "openspec/changes"], tmp_path),
+        (["git", "diff", "--cached", "--quiet"], tmp_path),
+        (["git", "commit", "-m", "chore: start login"], tmp_path),
+    ]
+
+
+def test_commit_initial_lane_state_skips_when_no_metadata_changed(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -120,11 +201,11 @@ def test_commit_initial_lane_state_commits_spec_files(
 
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
 
-    cli._commit_initial_lane_state(state)
+    assert cli._commit_initial_lane_state(state) is False
 
     assert calls == [
         (["git", "add", "openspec/changes"], tmp_path),
-        (["git", "commit", "-m", "chore: start login"], tmp_path),
+        (["git", "diff", "--cached", "--quiet"], tmp_path),
     ]
 
 
@@ -325,9 +406,10 @@ def test_start_reports_rollback_failure_when_spec_creation_fails(
     assert "archive failed" in error
 
 
-def test_start_rolls_back_remote_branch_when_draft_pr_creation_fails(
+def test_start_rolls_back_when_draft_pr_creation_fails(
     tmp_path: Path,
     monkeypatch,
+    capsys,
 ) -> None:
     workspace = tmp_path / "workspace"
 
@@ -362,7 +444,7 @@ def test_start_rolls_back_remote_branch_when_draft_pr_creation_fails(
     monkeypatch.setattr(
         cli,
         "_commit_initial_lane_state",
-        lambda state: None,
+        lambda state: True,
     )
     monkeypatch.setattr(cli, "push_branch", lambda state: "acme/app")
     monkeypatch.setattr(
@@ -399,6 +481,59 @@ def test_start_rolls_back_remote_branch_when_draft_pr_creation_fails(
     assert closed_prs == []
     assert not (workspace / ".lane" / "state.yaml").exists()
     assert not (workspace / "openspec" / "changes" / "login").exists()
+    assert "draft failed" in capsys.readouterr().err
+
+
+def test_start_defers_pr_when_metadata_has_no_commit(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+
+    def fake_create_worktree(
+        branch: str,
+        *,
+        base: str,
+        cwd: Path,
+        worktree_slug: str | None = None,
+    ) -> PaseoWorktree:
+        workspace.mkdir()
+        return PaseoWorktree(name="login", branch=branch, path=workspace)
+
+    def fake_create_spec(
+        name: str,
+        *,
+        schema: str,
+        description: str,
+        cwd: Path,
+    ) -> None:
+        (cwd / "openspec" / "changes" / name).mkdir(parents=True)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
+    monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
+    monkeypatch.setattr(cli, "create_spec", fake_create_spec)
+    monkeypatch.setattr(cli, "_commit_initial_lane_state", lambda state: False)
+    monkeypatch.setattr(
+        cli,
+        "push_branch",
+        lambda state: (_ for _ in ()).throw(AssertionError("should not push")),
+    )
+    monkeypatch.setattr(
+        cli,
+        "create_draft_pr",
+        lambda state: (_ for _ in ()).throw(AssertionError("should not create PR")),
+    )
+
+    assert cli.main(["start", "fix/login"]) == 0
+
+    state = read_state(workspace)
+    assert state.pr is None
+    assert (
+        "draft pr: deferred: no metadata changes to commit"
+        in capsys.readouterr().out
+    )
 
 
 def test_start_preflights_git_author_identity_before_worktree_creation(
