@@ -180,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Explicit lane-lite schema target directory.",
     )
+    install.add_argument(
+        "--openspec-schemas-dir",
+        type=Path,
+        help="OpenSpec schemas root where Lane schemas should be installed.",
+    )
     install.set_defaults(handler=handle_install)
 
     doctor = subparsers.add_parser("doctor", help="Run read-only diagnostics.")
@@ -588,13 +593,25 @@ def handle_init(args: argparse.Namespace) -> int:
 
 
 def handle_install(args: argparse.Namespace) -> int:
-    if args.opencode_tool or args.codex_skill or args.schema_dir:
+    if (
+        args.opencode_tool
+        or args.codex_skill
+        or args.schema_dir
+        or args.openspec_schemas_dir
+    ):
         home = Path.home() if args.home is None else args.home
+        if args.openspec_schemas_dir is not None:
+            schema_dir = args.openspec_schemas_dir
+            schema_bundle = True
+        else:
+            schema_dir = args.schema_dir or lane_lite_schema_path(home=home)
+            schema_bundle = False
         result = run_install_for_paths(
             home=home,
             opencode_tool=args.opencode_tool or opencode_tool_path(home=home),
             codex_skill=args.codex_skill or codex_skill_path(home=home),
-            schema_dir=args.schema_dir or lane_lite_schema_path(home=home),
+            schema_dir=schema_dir,
+            schema_bundle=schema_bundle,
         )
     else:
         result = run_install(home=args.home)

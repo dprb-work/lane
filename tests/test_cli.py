@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from lane import cli
@@ -97,6 +98,54 @@ def test_start_uses_paseo_create_and_writes_state(
     assert committed == [workspace]
     assert pushed == ["fix/login"]
     assert drafts == ["fix/login"]
+
+
+def test_install_supports_openspec_schema_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_install_for_paths(
+        *,
+        home: Path,
+        opencode_tool: Path,
+        codex_skill: Path,
+        schema_dir: Path,
+        schema_bundle: bool = False,
+    ):
+        @dataclass(frozen=True)
+        class Result:
+            opencode_tool: Path
+            opencode_tool_action: str
+            codex_skill: Path
+            codex_skill_action: str
+            schema_dir: Path
+
+        captured["schema_dir"] = schema_dir
+        captured["schema_bundle"] = schema_bundle
+        return Result(
+            opencode_tool=opencode_tool,
+            opencode_tool_action="skipped",
+            codex_skill=codex_skill,
+            codex_skill_action="skipped",
+            schema_dir=schema_dir,
+        )
+
+    monkeypatch.setattr(cli, "run_install_for_paths", fake_run_install_for_paths)
+
+    assert cli.main(
+        [
+            "install",
+            "--home",
+            str(tmp_path / "home"),
+            "--openspec-schemas-dir",
+            str(tmp_path / "openspec-schemas"),
+        ]
+    ) == 0
+
+    assert captured["schema_dir"] == tmp_path / "openspec-schemas"
+    assert captured["schema_bundle"] is True
 
 
 def test_commit_initial_lane_state_commits_spec_files(
