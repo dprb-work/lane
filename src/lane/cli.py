@@ -327,11 +327,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--review-agent",
         action="append",
         dest="review_agents",
-        help="Paseo provider mode/review agent name to run; repeat for multiple.",
+        help=(
+            "Reviewer prompt name from the configured reviewers directory; "
+            "repeat for multiple."
+        ),
+    )
+    review.add_argument(
+        "--reviewers-dir",
+        type=Path,
+        help=(
+            "Directory of reviewer prompt files; defaults to LANE_REVIEWERS_DIR "
+            "when set."
+        ),
     )
     review.add_argument(
         "--review-judge",
-        help="Paseo provider mode/review agent name for the final judge phase.",
+        help="Name to report for the built-in final judge phase.",
     )
     review.add_argument(
         "--json",
@@ -618,6 +629,10 @@ def handle_install(args: argparse.Namespace) -> int:
     print(f"lane-lite schema: {result.schema_dir}")
     print(f"opencode tool {result.opencode_tool_action}: {result.opencode_tool}")
     print(f"codex skill {result.codex_skill_action}: {result.codex_skill}")
+    print(
+        "reviewers: optional; set LANE_REVIEWERS_DIR or pass "
+        "`lane review --reviewers-dir <path>`"
+    )
     return 0
 
 
@@ -870,10 +885,12 @@ def handle_review(args: argparse.Namespace) -> int:
     kwargs = {}
     if args.review_judge:
         kwargs["judge"] = args.review_judge
+    if args.reviewers_dir:
+        kwargs["reviewers_dir"] = args.reviewers_dir
     result = (
-        run_review(state.path, expected=agents, **kwargs)
+        run_review(state.path, expected=agents, base=state.base, **kwargs)
         if agents is not None
-        else run_review(state.path, **kwargs)
+        else run_review(state.path, base=state.base, **kwargs)
     )
     state = replace(state, review=result.review, review_head=current_head(state.path))
     write_state(state.path, state)

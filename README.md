@@ -129,7 +129,10 @@ assets. `lane init` is repo bootstrap and validation.
 `lane install` installs the lightweight OpenSpec schema, registers the packaged
 OpenCode custom tool definition when `opencode` is present on `PATH`, and writes
 the managed Codex skill when `codex` is present. Restart OpenCode or reload its
-config after registration so the tool definition refreshes.
+config after registration so the tool definition refreshes. Reviewer prompt
+directories are optional and not installed globally; set `LANE_REVIEWERS_DIR` or
+pass `lane review --reviewers-dir <path>` when you want Lane to use shared
+reviewer prompts.
 
 Codex CLI uses a lighter setup: when `codex` is present on `PATH`, `lane install`
 writes a managed user skill at `~/.agents/skills/lane/SKILL.md`. Codex can use
@@ -248,29 +251,40 @@ real worktree `.venv` directory.
 `lane list` shows known lane state discovered from Paseo-listed worktrees. It
 prints an aligned table with lane id, status, branch, review, PR, and path.
 
-`lane review` launches Paseo-managed agents using review modes named by
-convention:
+`lane review` runs a built-in default reviewer prompt through Paseo and stores
+the aggregate verdict for the current `HEAD`. No provider-specific reviewer
+agent definitions are required for the default path.
+
+Set `LANE_REVIEWERS_DIR` or pass `--reviewers-dir <path>` to use markdown or
+text reviewer prompt files from an explicit directory. Lane does not assume a
+global reviewer directory; if you keep shared prompts in a location such as a
+brain folder, point `LANE_REVIEWERS_DIR` at that folder. Known prompt file stems
+are routed by Lane-side rules:
 
 ```text
-lane-review-security
-lane-review-quality
-lane-review-tests
+quality
+tests
+llm-smells
+security
 ```
 
-Pass `--review-agent <name>` one or more times to override that list. Names are
-passed through as full Paseo provider mode names; a trailing `.md` is accepted
-and removed for OpenCode-style agent file names. For the OpenCode provider, a
-file such as `lane-review-tests.md` is exposed to Paseo as mode
-`lane-review-tests`.
+When a configured directory contains one reviewer prompt, Lane runs that prompt
+and skips the judge. When it contains multiple known prompts, Lane selects the
+applicable reviewers from the changed paths: `quality` for code changes, `tests`
+for code/test validation, `llm-smells` for non-trivial code or agent/LLM-shaped
+changes, and `security` for security-sensitive paths. If no configured prompt
+applies, Lane falls back to the built-in default reviewer rather than choosing an
+arbitrary file.
 
-Review agents run through detached `paseo run` calls, so the configured Paseo
-provider owns the underlying runtime and reviewers can run concurrently. After
-reviewers finish, `lane review` runs a foreground judge phase with the
-`lane-review-judge` mode. Pass `--review-judge <name>` to use a different full
-Paseo provider mode name. The aggregate result is stored as `none`, `approve`,
-`comment`, or `reject`. When the lane has a PR/MR URL, `lane review` also posts
-or refreshes a templated review-summary comment with the aggregate verdict,
-reviewed `HEAD`, missing agents, and per-agent run status.
+Pass `--review-agent <name>` one or more times to run specific prompt files from
+the configured reviewers directory. A trailing `.md` or `.txt` is accepted and
+removed. Reviewers run through detached `paseo run` calls, so the configured
+Paseo provider owns the underlying runtime and reviewers can run concurrently.
+When more than one reviewer runs, `lane review` runs a foreground built-in judge
+prompt to filter the reviewer outputs. The aggregate result is stored as `none`,
+`approve`, `comment`, or `reject`. When the lane has a PR/MR URL, `lane review`
+also posts or refreshes a templated review-summary comment with the aggregate
+verdict, reviewed `HEAD`, missing prompt files, and per-reviewer run status.
 
 `lane push` runs verification by default, records freshness on success, and then
 pushes the branch to the inferred forge remote with upstream setup when needed.
