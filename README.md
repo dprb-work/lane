@@ -18,6 +18,12 @@ lane     -> glue and lifecycle policy
 
 ## Development Flow
 
+Install lane's user-level assets once per machine or image:
+
+```bash
+lane install
+```
+
 Initialize lane support once in the target repository:
 
 ```bash
@@ -117,11 +123,13 @@ The installer owns dependency installation. It installs system tools, installs
 Paseo and OpenSpec CLIs into a user-local npm prefix, creates a repo-local
 `.venv`, and installs the editable Python package there.
 It links `paseo`, `openspec`, and `lane` into `~/.local/bin`; ensure that
-directory is on `PATH`. `lane init` is repo bootstrap and validation.
+directory is on `PATH`. It also runs `lane install` to refresh user-level lane
+assets. `lane init` is repo bootstrap and validation.
 
-`lane init` registers the OpenCode custom tool definition from this checkout when
-`opencode` is present on `PATH` and you want OpenCode's typed `functions.lane`
-surface. You can also register it manually:
+`lane install` installs the lightweight OpenSpec schema, registers the OpenCode
+custom tool definition from this checkout when `opencode` is present on `PATH`,
+and writes the managed Codex skill when `codex` is present. You can also register
+the OpenCode tool manually:
 
 ```bash
 python3 scripts/register_opencode_tool.py
@@ -131,7 +139,7 @@ The registration script renders this checkout path into `opencode/tools/lane.ts`
 and recreates `~/.config/opencode/tools/lane.ts` every time. Restart OpenCode or
 reload its config after registration so the tool definition refreshes.
 
-Codex CLI uses a lighter setup: when `codex` is present on `PATH`, `lane init`
+Codex CLI uses a lighter setup: when `codex` is present on `PATH`, `lane install`
 writes a managed user skill at `~/.agents/skills/lane/SKILL.md`. Codex can use
 the skill to follow the `lane` workflow through normal shell commands. No MCP
 server or Codex plugin is required for this basic integration.
@@ -143,17 +151,11 @@ lane init
 ```
 
 `lane init` ensures `.lane/` is ignored, creates or updates the repo-local
-`AGENTS.md` with a managed Paseo-native workflow block, creates or updates
-`paseo.json` with the managed shared-venv setup command, installs the lightweight
-OpenSpec schema if missing, and registers installed agent runtimes. When
-`opencode` is present, it creates or updates the global OpenCode tool at
-`~/.config/opencode/tools/lane.ts`. When `codex` is present, it creates or
-updates the global Codex skill at `~/.agents/skills/lane/SKILL.md`. If either CLI
-is missing, that runtime registration is skipped. When a user-owned Codex skill
-already exists at that path, `lane init` leaves it in place and reports the skill
-as skipped. It errors when the installed Paseo CLI is below the minimum supported
-version and warns when a newer package is available online. It does not install
-or upgrade tools.
+`AGENTS.md` with a managed Paseo-native workflow block, and creates or updates
+`paseo.json` with the managed shared-venv setup command. It errors when the
+installed Paseo CLI is below the minimum supported version and warns when a newer
+package is available online. It does not install or upgrade tools or user-level
+agent integrations; run `lane install` for those assets.
 
 Start a new Paseo-backed lane:
 

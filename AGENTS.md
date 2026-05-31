@@ -12,7 +12,7 @@ fallback workflows unless explicitly requested.
 - Store lane-local runtime state under ignored `.lane/` directories.
 - Use `spec` as the user-facing term for the OpenSpec change record.
 - OpenSpec is obligatory for every lane. Small lanes use the global lightweight
-  schema installed by `lane init`.
+  schema installed by `lane install`.
 - Review perspectives live in Paseo-exposed provider modes, not in `lane` repo
   config or provider-specific assumptions.
 - Prefer clear local policy over generalization.

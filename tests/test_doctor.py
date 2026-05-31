@@ -128,7 +128,7 @@ def test_run_doctor_warns_when_codex_skill_is_missing(
     assert (
         "warn",
         "codex skill",
-        f"install codex skill: lane init {tmp_path.resolve()}",
+        "install codex skill: lane install",
     ) in _triples(diagnostics)
 
 

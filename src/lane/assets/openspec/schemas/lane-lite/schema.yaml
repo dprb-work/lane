@@ -1,0 +1,16 @@
+name: lane-lite
+version: 1
+description: Minimal lane spec for small fixes, docs, chores, and tests
+artifacts:
+  - id: lane
+    generates: lane.md
+    description: Compact intent, acceptance, and task record
+    template: lane.md
+    instruction: |
+      Create a compact lane record that explains why the change exists, what is
+      in scope, how acceptance will be judged, and the implementation tasks.
+    requires: []
+
+apply:
+  requires: [lane]
+  tracks: lane.md
