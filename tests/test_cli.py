@@ -357,7 +357,7 @@ def test_start_reports_rollback_failure_when_spec_creation_fails(
     assert "archive failed" in error
 
 
-def test_start_keeps_local_lane_when_draft_pr_creation_fails(
+def test_start_rolls_back_when_draft_pr_creation_fails(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -424,16 +424,15 @@ def test_start_keeps_local_lane_when_draft_pr_creation_fails(
         lambda pr_url, workspace: closed_prs.append(pr_url),
     )
 
-    assert cli.main(["start", "fix/login"]) == 0
+    assert cli.main(["start", "fix/login"]) == 2
 
-    assert deleted_remote == []
-    assert archived == []
-    assert deleted_local == []
+    assert deleted_remote == ["fix/login"]
+    assert archived == ["login"]
+    assert deleted_local == ["fix/login"]
     assert closed_prs == []
-    state = read_state(workspace)
-    assert state.pr is None
-    assert (workspace / "openspec" / "changes" / "login").exists()
-    assert "draft pr: deferred: draft failed" in capsys.readouterr().out
+    assert not (workspace / ".lane" / "state.yaml").exists()
+    assert not (workspace / "openspec" / "changes" / "login").exists()
+    assert "draft failed" in capsys.readouterr().err
 
 
 def test_start_defers_pr_when_metadata_has_no_commit(

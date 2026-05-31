@@ -398,16 +398,23 @@ def handle_start(args: argparse.Namespace) -> int:
             )
         )
         if _commit_initial_lane_state(state):
-            rollback.clear()
             repo = push_branch(state)
-            try:
-                result = create_draft_pr(state)
-            except ForgeError as error:
-                pr_note = f"deferred: {error}"
-            else:
-                state = replace(state, pr=result.pr_url)
-                write_state(worktree.path, state)
-                pr_note = result.pr_url
+            rollback.append(
+                (
+                    f"delete remote branch {state.branch}",
+                    lambda: delete_remote_branch(state.branch, state.path),
+                )
+            )
+            result = create_draft_pr(state)
+            rollback.append(
+                (
+                    f"close draft PR {result.pr_url}",
+                    lambda: close_pr(result.pr_url, state.path),
+                )
+            )
+            state = replace(state, pr=result.pr_url)
+            write_state(worktree.path, state)
+            pr_note = result.pr_url
         else:
             rollback.clear()
             pr_note = "deferred: no metadata changes to commit"
