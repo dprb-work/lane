@@ -101,7 +101,8 @@ def run_install(*, home: Path | None = None) -> InstallResult:
         home=home_root,
         opencode_tool=opencode_tool_path(home=home_root),
         codex_skill=codex_skill_path(home=home_root),
-        schema_dir=lane_lite_schema_path(home=home_root),
+        schema_dir=openspec_schemas_path(home=home_root),
+        schema_bundle=True,
     )
 
 
@@ -111,7 +112,13 @@ def run_install_for_paths(
     opencode_tool: Path,
     codex_skill: Path,
     schema_dir: Path,
+    schema_bundle: bool = False,
 ) -> InstallResult:
+    installed_schema_dir = (
+        install_lane_schemas(schema_dir)
+        if schema_bundle
+        else install_lane_lite_schema(schema_dir=schema_dir)
+    )
     return InstallResult(
         opencode_tool=opencode_tool,
         opencode_tool_action=ensure_opencode_tool_registration(
@@ -120,8 +127,15 @@ def run_install_for_paths(
         ),
         codex_skill=codex_skill,
         codex_skill_action=ensure_codex_skill(path=codex_skill),
-        schema_dir=install_lane_lite_schema(schema_dir=schema_dir),
+        schema_dir=installed_schema_dir,
     )
+
+
+def install_lane_schemas(schemas_dir: Path) -> Path:
+    source = files("lane").joinpath("assets/openspec/schemas")
+    with as_file(source) as source_path:
+        shutil.copytree(source_path, schemas_dir, dirs_exist_ok=True)
+    return schemas_dir
 
 
 def run_init(target: Path, *, home: Path | None = None) -> InitResult:
@@ -158,7 +172,13 @@ def opencode_tool_path(*, home: Path | None = None) -> Path:
 def lane_lite_schema_path(*, home: Path | None = None) -> Path:
     if home is None:
         home = Path.home()
-    return home / ".local" / "share" / "openspec" / "schemas" / LANE_LITE_SCHEMA
+    return openspec_schemas_path(home=home) / LANE_LITE_SCHEMA
+
+
+def openspec_schemas_path(*, home: Path | None = None) -> Path:
+    if home is None:
+        home = Path.home()
+    return home / ".local" / "share" / "openspec" / "schemas"
 
 
 def compact_opencode_registration_note() -> str:
