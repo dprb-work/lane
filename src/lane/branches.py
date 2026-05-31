@@ -17,6 +17,10 @@ SUPPORTED_BRANCH_TYPES = {
     "test": "lane-lite",
 }
 
+
+def supported_branch_types_label() -> str:
+    return ", ".join(sorted(SUPPORTED_BRANCH_TYPES))
+
 _BRANCH_RE = re.compile(
     r"^(?P<branch_type>[a-z][a-z0-9-]*)/(?P<slug>[a-z0-9][a-z0-9._-]*)$"
 )
@@ -40,9 +44,9 @@ def parse_branch(branch: str) -> BranchInfo:
     branch_type = match.group("branch_type")
     spec_schema = SUPPORTED_BRANCH_TYPES.get(branch_type)
     if spec_schema is None:
-        supported = ", ".join(sorted(SUPPORTED_BRANCH_TYPES))
         raise ValueError(
-            f"unsupported branch type {branch_type!r}; supported types: {supported}"
+            "unsupported branch type "
+            f"{branch_type!r}; supported types: {supported_branch_types_label()}"
         )
 
     return BranchInfo(

@@ -55,6 +55,7 @@ def test_start_uses_paseo_create_and_writes_state(
         spec_calls.append((name, schema, description, cwd))
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "rename_current_branch", fake_rename_current_branch)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
@@ -112,6 +113,7 @@ def test_commit_initial_lane_state_commits_spec_files(
         check: bool,
         text: bool,
         capture_output: bool,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         calls.append((argv, cwd))
         return subprocess.CompletedProcess(argv, 0, "", "")
@@ -143,11 +145,14 @@ def test_start_rolls_back_when_initial_commit_fails(
 
     archived: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         archived.append(name)
         return PaseoArchiveResult(name="login", removed_agents=())
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(
         cli,
@@ -203,11 +208,14 @@ def test_start_does_not_write_state_when_spec_creation_fails(
 
     archived: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         archived.append(name)
         return PaseoArchiveResult(name="login", removed_agents=())
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
@@ -234,11 +242,14 @@ def test_start_rolls_back_when_branch_rename_fails(
 
     archived: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         archived.append(name)
         return PaseoArchiveResult(name="login", removed_agents=())
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(
         cli,
@@ -278,16 +289,43 @@ def test_start_reports_rollback_failure_when_spec_creation_fails(
     ) -> None:
         raise OpenSpecError("spec failed")
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         raise cli.PaseoError("archive failed")
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_require_git_author_identity", lambda cwd: None)
     monkeypatch.setattr(cli, "create_worktree", fake_create_worktree)
     monkeypatch.setattr(cli, "create_spec", fake_create_spec)
     monkeypatch.setattr(cli, "archive_worktree", fake_archive_worktree)
 
     assert cli.main(["start", "fix/login"]) == 2
     assert not (workspace / ".lane" / "state.yaml").exists()
+
+
+def test_start_preflights_git_author_identity_before_worktree_creation(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LANE_GIT_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("LANE_GIT_AUTHOR_EMAIL", raising=False)
+    monkeypatch.setattr(cli, "_git_config", lambda key, cwd: None)
+    monkeypatch.setattr(
+        cli,
+        "create_worktree",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("should not create worktree")
+        ),
+    )
+
+    assert cli.main(["start", "fix/login"]) == 2
+
+    error = capsys.readouterr().err
+    assert "git author identity is required before creating a lane" in error
+    assert "git config user.name" in error
 
 
 def test_attach_current_paseo_workspace_writes_state_and_creates_spec(
@@ -478,7 +516,9 @@ def test_cleanup_archives_resolved_lane_worktree_name(
     write_state(workspace, state)
     calls: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         calls.append(name)
         return PaseoArchiveResult(name="login", removed_agents=("agent-1",))
 
@@ -518,7 +558,9 @@ def test_cleanup_from_workspace_keeps_summary_after_workspace_removed(
     )
     write_state(workspace, state)
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         shutil.rmtree(workspace)
         return PaseoArchiveResult(name=name, removed_agents=("agent-1",))
 
@@ -547,7 +589,9 @@ def test_cleanup_archive_failure_keeps_pending_summary(
     )
     write_state(workspace, state)
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         raise PaseoError(f"archive failed for {name}")
 
     monkeypatch.chdir(workspace)
@@ -572,7 +616,9 @@ def test_cleanup_refuses_lane_without_pr(
     write_state(tmp_path, state)
     calls: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         calls.append(name)
         return PaseoArchiveResult(name="login", removed_agents=())
 
@@ -592,7 +638,9 @@ def test_cleanup_refuses_active_spec(
     (tmp_path / "openspec" / "changes" / state.spec).mkdir(parents=True)
     calls: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         calls.append(name)
         return PaseoArchiveResult(name="login", removed_agents=())
 
@@ -613,7 +661,9 @@ def test_abort_archives_explicit_path_lane_worktree_name(
     write_state(workspace, state)
     calls: list[str] = []
 
-    def fake_archive_worktree(name: str) -> PaseoArchiveResult:
+    def fake_archive_worktree(
+        name: str, *, cwd: Path | None = None
+    ) -> PaseoArchiveResult:
         calls.append(name)
         return PaseoArchiveResult(name="drop-experiment", removed_agents=())
 
@@ -721,6 +771,25 @@ def test_status_prints_health_fields(
     assert "health.verification: missing" in output
     assert "health.spec: active" in output
     assert "health.pr: none" in output
+
+
+def test_status_reports_initialized_checkout_that_is_not_lane(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    (tmp_path / ".gitignore").write_text(".lane/\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("lane instructions\n", encoding="utf-8")
+    (tmp_path / "paseo.json").write_text("{}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_git_root", lambda path: tmp_path)
+
+    assert cli.main(["status", "."]) == 0
+
+    assert capsys.readouterr().out == (
+        "repo initialized, but current checkout is not a lane; "
+        "run `lane start <type>/<slug>` or `lane list`\n"
+    )
 
 
 def test_status_json_prints_state_and_health(
@@ -889,7 +958,7 @@ def test_status_materialization_preserves_existing_active_spec(
     monkeypatch.setattr(
         cli,
         "archive_worktree",
-        lambda name: archive_calls.append(name)
+        lambda name, *, cwd=None: archive_calls.append(name)
         or PaseoArchiveResult(name=name, removed_agents=()),
     )
     monkeypatch.setattr(
@@ -1032,7 +1101,7 @@ def test_cleanup_materialized_remote_lane_does_not_recreate_archived_spec(
     monkeypatch.setattr(
         cli,
         "archive_worktree",
-        lambda name: archive_calls.append(name)
+        lambda name, *, cwd=None: archive_calls.append(name)
         or PaseoArchiveResult(name=name, removed_agents=()),
     )
 
@@ -1076,7 +1145,7 @@ def test_abort_materialized_remote_lane_archives_paseo_worktree_name(
     monkeypatch.setattr(
         cli,
         "archive_worktree",
-        lambda name: archive_calls.append(name)
+        lambda name, *, cwd=None: archive_calls.append(name)
         or PaseoArchiveResult(name=name, removed_agents=()),
     )
 

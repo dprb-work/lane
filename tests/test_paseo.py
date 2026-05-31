@@ -16,6 +16,11 @@ from lane.paseo import (
     rename_current_branch,
 )
 
+PASEO_CONTEXT_ERROR = (
+    '{"error":{"code":"WORKTREE_LIST_FAILED",'
+    '"message":"cwd or repoRoot is required"}}'
+)
+
 
 def test_create_worktree_calls_paseo_branch_off(
     monkeypatch: pytest.MonkeyPatch,
@@ -166,6 +171,28 @@ def test_list_worktrees_falls_back_to_daemon_client_for_paseo_cli_cwd_bug(
     ]
 
 
+def test_list_worktrees_falls_back_when_paseo_returns_error_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.paseo.shutil.which", lambda _: "/usr/bin/tool")
+    monkeypatch.setattr(
+        "lane.paseo._paseo_client_module_path",
+        lambda: Path("/opt/paseo/dist/utils/client.js"),
+    )
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(PASEO_CONTEXT_ERROR)
+        assert argv[:3] == ["node", "--input-type=module", "-e"]
+        return _result(
+            '{"worktrees":[{"worktreePath":"/tmp/login","branchName":"fix/login"}],"error":null}'
+        )
+
+    assert list_worktrees(cwd=Path("/repo"), runner=runner) == [
+        PaseoWorktree(name="login", branch="fix/login", path=Path("/tmp/login"))
+    ]
+
+
 def test_archive_worktree_parses_paseo_json(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("lane.paseo.shutil.which", lambda _: "/usr/bin/paseo")
 
@@ -180,6 +207,40 @@ def test_archive_worktree_parses_paseo_json(monkeypatch: pytest.MonkeyPatch) -> 
         name="login",
         removed_agents=("abc123",),
     )
+
+
+def test_archive_worktree_falls_back_to_daemon_client_for_paseo_cli_cwd_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.paseo.shutil.which", lambda _: "/usr/bin/tool")
+    monkeypatch.setattr(
+        "lane.paseo._paseo_client_module_path",
+        lambda: Path("/opt/paseo/dist/utils/client.js"),
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv == ["paseo", "worktree", "archive", "login", "--json"]:
+            assert cwd == Path("/repo")
+            return _result(PASEO_CONTEXT_ERROR)
+        if argv == ["paseo", "worktree", "ls", "--json"]:
+            return _result(PASEO_CONTEXT_ERROR)
+        if argv[:3] == ["node", "--input-type=module", "-e"] and argv[4] == "/repo":
+            return _result(
+                '{"worktrees":[{"worktreePath":"/tmp/login","branchName":"fix/login"}],"error":null}'
+            )
+        if (
+            argv[:3] == ["node", "--input-type=module", "-e"]
+            and argv[4] == "/tmp/login"
+        ):
+            return _result('{"removedAgents":["abc123"],"error":null}')
+        raise AssertionError(argv)
+
+    assert archive_worktree("login", cwd=Path("/repo"), runner=runner) == (
+        PaseoArchiveResult(name="login", removed_agents=("abc123",))
+    )
+    assert calls[0] == ["paseo", "worktree", "archive", "login", "--json"]
 
 
 def test_paseo_missing_cli_raises_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:

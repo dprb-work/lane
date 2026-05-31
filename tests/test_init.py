@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from lane.branches import supported_branch_types_label
 from lane.init import (
+    AGENT_INSTRUCTIONS,
     AGENT_INSTRUCTIONS_HEADER,
     CODEX_SKILL_MARKER,
     OPENCODE_TOOL_PLACEHOLDER,
@@ -72,6 +74,10 @@ def test_run_init_reports_required_tools(
     assert result.codex_skill == tmp_path / ".agents/skills/lane/SKILL.md"
     assert result.codex_skill_action == "skipped"
     assert result.paseo_config == tmp_path / "paseo.json"
+
+
+def test_agent_instructions_list_supported_branch_types() -> None:
+    assert f"Supported types: {supported_branch_types_label()}." in AGENT_INSTRUCTIONS
 
 
 def test_ensure_paseo_shared_venv_setup_creates_config(tmp_path: Path) -> None:

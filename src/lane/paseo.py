@@ -113,6 +113,11 @@ def list_worktrees(
         if cwd is None or "cwd or repoRoot is required" not in str(error):
             raise
         raw = _list_worktrees_with_daemon_client(cwd=cwd, runner=runner)
+    error_message = _json_error_message(raw)
+    if error_message is not None:
+        if cwd is None or "cwd or repoRoot is required" not in error_message:
+            raise PaseoError(f"paseo worktree ls failed: {error_message}")
+        raw = _list_worktrees_with_daemon_client(cwd=cwd, runner=runner)
     if not isinstance(raw, list):
         raise PaseoError("paseo worktree ls returned invalid JSON")
     return [_worktree_from_list_item(item) for item in raw]
@@ -181,20 +186,100 @@ def _paseo_client_module_path() -> Path:
 def archive_worktree(
     name: str,
     *,
+    cwd: Path | None = None,
     runner: Runner | None = None,
 ) -> PaseoArchiveResult:
     runner = _run if runner is None else runner
-    raw = _run_json(
-        ["paseo", "worktree", "archive", name, "--json"],
-        cwd=None,
-        runner=runner,
-    )
+    try:
+        raw = _run_json(
+            ["paseo", "worktree", "archive", name, "--json"],
+            cwd=cwd,
+            runner=runner,
+        )
+    except PaseoError as error:
+        if cwd is None or "cwd or repoRoot is required" not in str(error):
+            raise
+        return _archive_worktree_with_daemon_client(name, cwd=cwd, runner=runner)
+    error_message = _json_error_message(raw)
+    if error_message is not None:
+        if cwd is None or "cwd or repoRoot is required" not in error_message:
+            raise PaseoError(f"paseo worktree archive failed: {error_message}")
+        return _archive_worktree_with_daemon_client(name, cwd=cwd, runner=runner)
     if not isinstance(raw, dict):
         raise PaseoError("paseo worktree archive returned invalid JSON")
     return PaseoArchiveResult(
         name=_required_str(raw, "name"),
         removed_agents=tuple(_required_str_list(raw, "removedAgents")),
     )
+
+
+def _archive_worktree_with_daemon_client(
+    name: str,
+    *,
+    cwd: Path,
+    runner: Runner,
+) -> PaseoArchiveResult:
+    worktrees = list_worktrees(cwd=cwd, runner=runner)
+    matches = [
+        worktree
+        for worktree in worktrees
+        if worktree.name == name or worktree.branch == name
+    ]
+    if not matches:
+        raise PaseoError(f"worktree not found: {name}")
+    if len(matches) > 1:
+        candidates = ", ".join(sorted(worktree.branch for worktree in matches))
+        raise PaseoError(f"ambiguous worktree {name!r}; candidates: {candidates}")
+
+    client_module = _paseo_client_module_path()
+    script = f"""
+import {{ connectToDaemon }} from {json.dumps(client_module.as_uri())};
+
+const client = await connectToDaemon({{}});
+try {{
+  const response = await client.archivePaseoWorktree({{
+    worktreePath: process.argv[1],
+  }});
+  console.log(JSON.stringify(response));
+}} finally {{
+  await client.close().catch(() => {{}});
+}}
+"""
+    target = matches[0]
+    result = _run_command(
+        ["node", "--input-type=module", "-e", script, str(target.path)],
+        cwd=cwd,
+        runner=runner,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "command failed"
+        raise PaseoError(f"paseo daemon worktree archive failed: {message}")
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PaseoError("paseo daemon returned invalid JSON") from error
+    if not isinstance(response, dict):
+        raise PaseoError("paseo daemon returned invalid JSON")
+    error = response.get("error")
+    if error:
+        message = error.get("message") if isinstance(error, dict) else str(error)
+        raise PaseoError(f"paseo daemon worktree archive failed: {message}")
+    return PaseoArchiveResult(
+        name=target.name,
+        removed_agents=tuple(_required_str_list(response, "removedAgents")),
+    )
+
+
+def _json_error_message(raw: Any) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    error = raw.get("error")
+    if not error:
+        return None
+    if isinstance(error, dict):
+        message = error.get("message")
+        return message if isinstance(message, str) else str(error)
+    return str(error)
 
 
 def _run_json(argv: list[str], *, cwd: Path | None, runner: Runner) -> Any:

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
 from lane import __version__
-from lane.branches import parse_branch
+from lane.branches import parse_branch, supported_branch_types_label
 from lane.cleanup import (
     CleanupError,
     cleanup_archive_root,
@@ -85,8 +86,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"lane {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    start = subparsers.add_parser("start", help="Create a new Paseo-backed lane.")
-    start.add_argument("branch", help="Branch in <type>/<slug> form.")
+    start = subparsers.add_parser(
+        "start",
+        help="Create a new Paseo-backed lane.",
+        description=(
+            "Create a new Paseo-backed lane. Supported branch types: "
+            f"{supported_branch_types_label()}."
+        ),
+    )
+    start.add_argument(
+        "branch",
+        help=(
+            "Branch in <type>/<slug> form; supported types: "
+            f"{supported_branch_types_label()}."
+        ),
+    )
     start.add_argument(
         "--base", default="main", help="Base branch/ref (default: main)."
     )
@@ -291,6 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def handle_start(args: argparse.Namespace) -> int:
     branch = parse_branch(args.branch)
+    _require_git_author_identity(Path.cwd())
     worktree = create_worktree(
         branch.branch,
         base=args.base,
@@ -302,7 +317,7 @@ def handle_start(args: argparse.Namespace) -> int:
             rename_current_branch(branch.branch, cwd=worktree.path)
         except PaseoError as error:
             try:
-                archive_worktree(worktree.name)
+                archive_worktree(worktree.name, cwd=Path.cwd())
             except PaseoError as archive_error:
                 raise PaseoError(
                     "branch rename failed and rollback archive failed: "
@@ -326,7 +341,7 @@ def handle_start(args: argparse.Namespace) -> int:
         )
     except OpenSpecError as error:
         try:
-            archive_worktree(worktree.name)
+            archive_worktree(worktree.name, cwd=Path.cwd())
         except PaseoError as archive_error:
             raise OpenSpecError(
                 "spec creation failed and rollback archive failed: "
@@ -338,7 +353,7 @@ def handle_start(args: argparse.Namespace) -> int:
         _commit_initial_lane_state(state)
     except ForgeError as error:
         try:
-            archive_worktree(worktree.name)
+            archive_worktree(worktree.name, cwd=Path.cwd())
         except PaseoError as archive_error:
             raise ForgeError(
                 "initial lane commit failed and rollback archive failed: "
@@ -376,10 +391,61 @@ def _commit_initial_lane_state(state: LaneState) -> None:
         check=False,
         text=True,
         capture_output=True,
+        env=_commit_env(),
     )
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "git commit failed"
         raise ForgeError(f"initial lane commit failed: {message}")
+
+
+def _require_git_author_identity(cwd: Path) -> None:
+    name = os.environ.get("LANE_GIT_AUTHOR_NAME") or _git_config("user.name", cwd)
+    email = os.environ.get("LANE_GIT_AUTHOR_EMAIL") or _git_config("user.email", cwd)
+    missing = []
+    if not name:
+        missing.append("user.name")
+    if not email:
+        missing.append("user.email")
+    if not missing:
+        return
+
+    missing_label = " and ".join(missing)
+    raise ForgeError(
+        "git author identity is required before creating a lane; "
+        f"missing {missing_label}. Configure this repo with "
+        "`git config user.name \"Your Name\"` and "
+        "`git config user.email \"you@example.com\"`, or set "
+        "LANE_GIT_AUTHOR_NAME and LANE_GIT_AUTHOR_EMAIL for this command."
+    )
+
+
+def _git_config(key: str, cwd: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "config", "--get", key],
+        cwd=cwd,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
+def _commit_env() -> dict[str, str] | None:
+    name = os.environ.get("LANE_GIT_AUTHOR_NAME")
+    email = os.environ.get("LANE_GIT_AUTHOR_EMAIL")
+    if not name and not email:
+        return None
+    env = os.environ.copy()
+    if name:
+        env["GIT_AUTHOR_NAME"] = name
+        env["GIT_COMMITTER_NAME"] = name
+    if email:
+        env["GIT_AUTHOR_EMAIL"] = email
+        env["GIT_COMMITTER_EMAIL"] = email
+    return env
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -420,7 +486,22 @@ def handle_doctor(args: argparse.Namespace) -> int:
 
 
 def handle_status(args: argparse.Namespace) -> int:
-    state = _resolve_lane(args.selector)
+    try:
+        state = _resolve_lane(args.selector)
+    except ValueError as error:
+        if _is_initialized_non_lane_checkout(args.selector):
+            if args.json:
+                _print_json(
+                    {
+                        "initialized": True,
+                        "lane": None,
+                        "message": _initialized_non_lane_message(),
+                    }
+                )
+            else:
+                print(_initialized_non_lane_message())
+            return 0
+        raise error
     if args.json:
         _print_status_json(state)
         return 0
@@ -459,7 +540,7 @@ def handle_cleanup(args: argparse.Namespace) -> int:
         if state.pr is None:
             raise CleanupError("remote branch deletion requires a merged PR")
         delete_remote_branch(state.branch, state.path)
-    result = archive_worktree(state.id)
+    result = archive_worktree(state.id, cwd=state.path)
     summary_path = write_cleanup_archive_summary(
         archive_root,
         state,
@@ -479,7 +560,7 @@ def handle_abort(args: argparse.Namespace) -> int:
         close_pr(state.pr, state.path)
     if args.delete_remote_branch:
         delete_remote_branch(state.branch, state.path)
-    result = archive_worktree(state.id)
+    result = archive_worktree(state.id, cwd=state.path)
     print(f"aborted: {result.name}")
     return 0
 
@@ -771,6 +852,56 @@ def _print_sync_result(result: SyncResult) -> None:
 def _print_diagnostics(diagnostics: tuple[Diagnostic, ...]) -> None:
     for diagnostic in diagnostics:
         print(f"{diagnostic.status}: {diagnostic.name}: {diagnostic.detail}")
+
+
+def _initialized_non_lane_message() -> str:
+    return (
+        "repo initialized, but current checkout is not a lane; "
+        "run `lane start <type>/<slug>` or `lane list`"
+    )
+
+
+def _is_initialized_non_lane_checkout(selector: str | None) -> bool:
+    path = Path.cwd() if selector is None else Path(selector).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.exists() or find_state_path(path) is not None:
+        return False
+    root = _git_root(path)
+    if root is None:
+        return False
+    return _has_lane_init_markers(root)
+
+
+def _git_root(path: Path) -> Path | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return None
+    root = result.stdout.strip()
+    return Path(root) if root else None
+
+
+def _has_lane_init_markers(root: Path) -> bool:
+    gitignore = root / ".gitignore"
+    agents = root / "AGENTS.md"
+    paseo_config = root / "paseo.json"
+    return (
+        _file_contains_line(gitignore, ".lane/")
+        and agents.is_file()
+        and paseo_config.is_file()
+    )
+
+
+def _file_contains_line(path: Path, expected: str) -> bool:
+    if not path.is_file():
+        return False
+    return expected in path.read_text(encoding="utf-8").splitlines()
 
 
 def _print_lane_table(lanes: list[LaneState]) -> None:
