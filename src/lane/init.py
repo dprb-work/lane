@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from lane.branches import supported_branch_types_label
+
 LANE_IGNORE_ENTRY = ".lane/"
 LANE_LITE_SCHEMA = "lane-lite"
 MIN_PASEO_VERSION = "0.1.75"
@@ -51,6 +53,7 @@ Required commands:
 
 - Initialize repo support with `lane init`.
 - Start Paseo-backed lanes with `lane start <type>/<slug>`.
+  Supported types: {supported_branch_types_label()}.
 - Inspect work with `lane status` and `lane list`.
 - Verify with `lane verify`.
 - Run lane-scoped commands with `lane run -- <command>`.
