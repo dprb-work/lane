@@ -374,13 +374,31 @@ Node packages.
 
 `lane` does not implement non-Paseo worktree fallback behavior.
 
-## Migration From `wt`
+## Self-Hosting
 
-Treat `lane` as a new Paseo-native policy surface, not a compatibility wrapper
-for `devbox-worktree` or `wt`. Paseo owns workspace paths, setup, services,
-terminals, agents, and archive behavior. `lane` keeps only compact lane state,
-OpenSpec obligation, verification, review aggregation, finalize, and cleanup
-policy.
+Treat `lane` as the Paseo-native policy surface for this repository. Paseo owns
+workspace paths, setup, services, terminals, agents, and archive behavior. `lane`
+keeps only compact lane state, OpenSpec obligation, verification, review
+aggregation, finalize, and cleanup policy.
+
+For this repository, self-host development work should use `lane` directly:
+
+```bash
+scripts/dev-lane.sh start <type>/<slug> --base main
+```
+
+The helper runs this checkout's source via `PYTHONPATH=src` so a shared editable
+venv cannot accidentally execute another worktree's installed `lane` entrypoint.
+After the lane exists, work from the Paseo workspace and keep using the helper for
+lifecycle commands: `scripts/dev-lane.sh status`, `scripts/dev-lane.sh run --
+<command>`, `scripts/dev-lane.sh verify`, `scripts/dev-lane.sh push`,
+`scripts/dev-lane.sh review`, `scripts/dev-lane.sh finalize`, and
+`scripts/dev-lane.sh cleanup`.
+
+Historical OpenSpec records may mention legacy workspace paths. Those paths
+document where old work happened; do not recreate them or add compatibility code
+to make them actionable. Active work should have `.lane/state.yaml` and be
+discoverable through `lane list`.
 
 ## Initial Change
 
