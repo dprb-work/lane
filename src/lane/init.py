@@ -13,6 +13,7 @@ PASEO_NPM_PACKAGE = "@getpaseo/cli"
 REPORTED_TOOLS = ("paseo", "openspec", "git", "gh", "glab")
 AGENT_INSTRUCTIONS_HEADER = "<!-- lane:instructions:start -->"
 AGENT_INSTRUCTIONS_FOOTER = "<!-- lane:instructions:end -->"
+CODEX_SKILL_MARKER = "<!-- lane:codex-skill -->"
 PASEO_CONFIG_FILE = "paseo.json"
 SHARED_VENV_SETUP_MARKER = "# lane:shared-venv"
 SHARED_VENV_SETUP_COMMAND = """# lane:shared-venv
@@ -72,6 +73,8 @@ class InitResult:
     gitignore: Path
     agents: Path
     agents_action: str
+    codex_skill: Path
+    codex_skill_action: str
     paseo_config: Path
     paseo_config_action: str
     schema_dir: Path
@@ -85,6 +88,7 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     target = target.resolve()
     ensure_lane_ignored(target)
     agents_action = ensure_agent_instructions(target)
+    codex_skill_action = ensure_codex_skill(target)
     paseo_config_action = ensure_paseo_shared_venv_setup(target)
     schema_dir = install_lane_lite_schema(Path.home() if home is None else home)
     paseo_check = check_paseo_cli(target)
@@ -98,6 +102,8 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
         gitignore=target / ".gitignore",
         agents=target / "AGENTS.md",
         agents_action=agents_action,
+        codex_skill=codex_skill_path(target),
+        codex_skill_action=codex_skill_action,
         paseo_config=target / PASEO_CONFIG_FILE,
         paseo_config_action=paseo_config_action,
         schema_dir=schema_dir,
@@ -122,6 +128,17 @@ def compact_opencode_registration_note() -> str:
         / "register_opencode_tool.py"
     )
     return f"register opencode tool: python3 {script}"
+
+
+def codex_skill_path(target: Path) -> Path:
+    return target / ".agents" / "skills" / "lane" / "SKILL.md"
+
+
+def compact_codex_skill_note(target: Path) -> str:
+    path = codex_skill_path(target.resolve())
+    if path.is_file():
+        return f"codex skill present: {path}"
+    return f"install codex skill: lane init {target.resolve()}"
 
 
 def compact_tool_requirement_note() -> str:
@@ -218,6 +235,22 @@ def ensure_agent_instructions(target: Path) -> str:
         "# Lane Agent Instructions\n\n" + AGENT_INSTRUCTIONS + "\n",
         encoding="utf-8",
     )
+    return "created"
+
+
+def ensure_codex_skill(target: Path) -> str:
+    path = codex_skill_path(target)
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        if CODEX_SKILL_MARKER not in existing:
+            return "skipped"
+        if existing == _codex_skill():
+            return "unchanged"
+        path.write_text(_codex_skill(), encoding="utf-8")
+        return "replaced"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_codex_skill(), encoding="utf-8")
     return "created"
 
 
@@ -375,4 +408,62 @@ def _lane_template() -> str:
 ## Tasks
 
 - [ ]
+"""
+
+
+def _codex_skill() -> str:
+    description = (
+        "Use when working in repositories that use the lane Paseo-native "
+        "lifecycle CLI, including starting lanes, checking status, running "
+        "verification, review handoff, finalize, cleanup, or deciding whether "
+        "raw git worktree commands are appropriate."
+    )
+    return f"""---
+name: lane
+description: {description}
+---
+
+{CODEX_SKILL_MARKER}
+
+# Lane Workflow
+
+Use this skill when a repository uses `lane` for Paseo-native development lanes.
+
+## Rules
+
+- Prefer `lane` commands over raw `git worktree`, raw `git push`, or ad hoc
+  checkout commands.
+- Start coherent work with `lane start <type>/<slug>` unless the user explicitly
+  says not to or `lane`/Paseo is unavailable.
+- Work inside the created Paseo workspace, not the source checkout.
+- Use `lane status` and `lane doctor` before diagnosing lane lifecycle issues.
+- Use `lane run -- <command>` for lane-scoped commands.
+- Use `lane verify` for repository verification when available.
+- Use `lane review`, then `lane finalize`, before human PR or MR handoff when
+  the lane is ready.
+- Use `lane cleanup` for merged lanes and `lane abort` for cancelled lanes.
+- If `lane` or Paseo is unavailable and raw Git is necessary, state the
+  exception before using raw Git.
+
+## Common Commands
+
+```bash
+lane init
+lane start feat/example --base main
+lane status
+lane doctor
+lane run -- python -m pytest
+lane verify
+lane push
+lane review
+lane finalize
+lane cleanup
+```
+
+## Notes
+
+`lane` owns ignored `.lane/` state, required OpenSpec specs, verification,
+review orchestration, finalize, cleanup, and abort policy. Paseo owns workspace
+and worktree creation, setup, services, provider runtimes, agents, terminals,
+and archive behavior.
 """

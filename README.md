@@ -73,6 +73,11 @@ The registration script renders this checkout path into `opencode/tools/lane.ts`
 and recreates `~/.config/opencode/tools/lane.ts` every time. Restart OpenCode or
 reload its config after registration so the tool definition refreshes.
 
+Codex CLI uses a lighter setup: `lane init` writes a repo-local skill at
+`.agents/skills/lane/SKILL.md`. Codex discovers repo skills from trusted
+projects and can use the skill to follow the `lane` workflow through normal shell
+commands. No MCP server or Codex plugin is required for this basic integration.
+
 Initialize repo support once:
 
 ```bash
@@ -81,13 +86,15 @@ lane init
 
 `lane init` ensures `.lane/` is ignored, creates or updates the repo-local
 `AGENTS.md` with a managed Paseo-native workflow block, creates or updates
-`paseo.json` with the managed shared-venv setup command, installs the lightweight
-OpenSpec schema if missing, reports missing tools, reports OpenCode tool
-registration status, and prints Paseo version information. When the managed
-`AGENTS.md` block already exists, `lane init` replaces it with the current
-instructions. It errors when the installed Paseo CLI is below the minimum
-supported version and warns when a newer package is available online. It does not
-install or upgrade tools.
+`paseo.json` with the managed shared-venv setup command, creates or updates the
+managed Codex skill, installs the lightweight OpenSpec schema if missing, reports
+missing tools, reports Codex skill and OpenCode tool registration status, and
+prints Paseo version information. When the managed `AGENTS.md` block already
+exists, `lane init` replaces it with the current instructions. When a user-owned
+Codex skill already exists at `.agents/skills/lane/SKILL.md`, `lane init` leaves
+it in place and reports the skill as skipped. It errors when the installed Paseo
+CLI is below the minimum supported version and warns when a newer package is
+available online. It does not install or upgrade tools.
 
 Start a new Paseo-backed lane:
 
@@ -151,12 +158,13 @@ warnings.
 
 `lane doctor [path]` runs read-only environment diagnostics and prints compact
 `ok`, `warn`, and `fail` lines for required tools, Paseo CLI and daemon access,
-OpenSpec, OpenCode tool registration, forge CLI availability and auth for the
-detected remote provider, forge repository readability, GitHub ruleset
-readability, verification command discovery, and lane state validity when
+OpenSpec, OpenCode tool registration, Codex skill setup, forge CLI availability
+and auth for the detected remote provider, forge repository readability, GitHub
+ruleset readability, verification command discovery, and lane state validity when
 `.lane/state.yaml` is present. It exits non-zero when required checks fail, but
-warnings such as missing OpenCode tool registration, missing lane state outside a
-lane, or unreadable GitHub rulesets do not fail the command.
+warnings such as missing Codex skill setup, missing OpenCode tool registration,
+missing lane state outside a lane, or unreadable GitHub rulesets do not fail the
+command.
 
 `lane verify` runs `just verify` when a `justfile` defines `verify`; otherwise it
 runs `python3 scripts/verify.py` when that script exists, then falls back to

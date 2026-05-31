@@ -30,6 +30,7 @@ from lane.forge import (
 )
 from lane.init import (
     InitError,
+    compact_codex_skill_note,
     compact_opencode_registration_note,
     compact_tool_requirement_note,
     run_init,
@@ -385,8 +386,10 @@ def handle_init(args: argparse.Namespace) -> int:
     result = run_init(Path(args.path))
     print(f"ignored state: {result.gitignore}")
     print(f"agent instructions {result.agents_action}: {result.agents}")
+    print(f"codex skill {result.codex_skill_action}: {result.codex_skill}")
     print(f"paseo config {result.paseo_config_action}: {result.paseo_config}")
     print(f"lane-lite schema: {result.schema_dir}")
+    print(compact_codex_skill_note(Path(args.path)))
     print(compact_opencode_registration_note())
     print(compact_tool_requirement_note())
     if result.paseo_version is not None:

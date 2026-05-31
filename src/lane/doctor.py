@@ -8,7 +8,13 @@ from typing import Literal, Protocol
 
 from lane.branches import parse_branch
 from lane.forge_remote import ForgeRemote, ForgeRemoteError, infer_forge_remote
-from lane.init import compact_opencode_registration_note, opencode_tool_path
+from lane.init import (
+    CODEX_SKILL_MARKER,
+    codex_skill_path,
+    compact_codex_skill_note,
+    compact_opencode_registration_note,
+    opencode_tool_path,
+)
 from lane.paseo import PaseoError, list_worktrees
 from lane.run import command_env
 from lane.state import find_state_path, read_state
@@ -46,6 +52,7 @@ def run_doctor(
         _paseo_daemon_check(workspace, runner),
         _tool_check("openspec"),
         _opencode_tool_check(),
+        _codex_skill_check(workspace),
         *_forge_checks(workspace, runner),
         _verification_check(workspace),
         _lane_state_check(workspace),
@@ -85,6 +92,33 @@ def _opencode_tool_check() -> Diagnostic:
             f"registered to another checkout or install: {path}",
         )
     return Diagnostic("ok", "opencode tool", str(path))
+
+
+def _codex_skill_check(workspace: Path) -> Diagnostic:
+    path = _find_codex_skill_path(workspace)
+    if not path.is_file():
+        return Diagnostic("warn", "codex skill", compact_codex_skill_note(workspace))
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as error:
+        return Diagnostic("warn", "codex skill", str(error))
+    if CODEX_SKILL_MARKER not in content:
+        return Diagnostic(
+            "warn",
+            "codex skill",
+            f"custom skill not managed by lane: {path}",
+        )
+    return Diagnostic("ok", "codex skill", str(path))
+
+
+def _find_codex_skill_path(workspace: Path) -> Path:
+    for candidate_root in (workspace, *workspace.parents):
+        candidate = codex_skill_path(candidate_root)
+        if candidate.is_file():
+            return candidate
+        if (candidate_root / ".git").exists():
+            break
+    return codex_skill_path(workspace)
 
 
 def _paseo_check(workspace: Path, runner: Runner) -> Diagnostic:

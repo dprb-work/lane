@@ -8,11 +8,15 @@ import pytest
 
 from lane.init import (
     AGENT_INSTRUCTIONS_HEADER,
+    CODEX_SKILL_MARKER,
     SHARED_VENV_SETUP_COMMAND,
     InitError,
     check_paseo_cli,
+    codex_skill_path,
+    compact_codex_skill_note,
     compact_tool_requirement_note,
     ensure_agent_instructions,
+    ensure_codex_skill,
     ensure_lane_ignored,
     ensure_paseo_shared_venv_setup,
     install_lane_lite_schema,
@@ -60,6 +64,7 @@ def test_run_init_reports_required_tools(
     result = run_init(tmp_path, home=tmp_path)
 
     assert result.missing_tools == ("openspec", "gh", "glab")
+    assert result.codex_skill == tmp_path / ".agents/skills/lane/SKILL.md"
     assert result.paseo_config == tmp_path / "paseo.json"
 
 
@@ -131,6 +136,48 @@ def test_compact_tool_requirement_note_explains_provider_specific_clis() -> None
     assert "GitHub repos need gh" in note
     assert "GitLab repos need glab" in note
     assert "do not need both" in note
+
+
+def test_ensure_codex_skill_creates_managed_skill(tmp_path: Path) -> None:
+    action = ensure_codex_skill(tmp_path)
+
+    path = codex_skill_path(tmp_path)
+    text = path.read_text(encoding="utf-8")
+    assert action == "created"
+    assert path == tmp_path / ".agents/skills/lane/SKILL.md"
+    assert "name: lane" in text
+    assert CODEX_SKILL_MARKER in text
+    assert "lane start <type>/<slug>" in text
+
+
+def test_ensure_codex_skill_replaces_managed_skill(tmp_path: Path) -> None:
+    path = codex_skill_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(f"old\n{CODEX_SKILL_MARKER}\n", encoding="utf-8")
+
+    action = ensure_codex_skill(tmp_path)
+
+    assert action == "replaced"
+    assert "old" not in path.read_text(encoding="utf-8")
+
+
+def test_ensure_codex_skill_skips_custom_skill(tmp_path: Path) -> None:
+    path = codex_skill_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nname: lane\n---\ncustom\n", encoding="utf-8")
+
+    action = ensure_codex_skill(tmp_path)
+
+    assert action == "skipped"
+    assert "custom" in path.read_text(encoding="utf-8")
+
+
+def test_compact_codex_skill_note(tmp_path: Path) -> None:
+    assert compact_codex_skill_note(tmp_path).startswith("install codex skill:")
+
+    ensure_codex_skill(tmp_path)
+
+    assert compact_codex_skill_note(tmp_path).startswith("codex skill present:")
 
 
 def test_ensure_agent_instructions_creates_agents(tmp_path: Path) -> None:
