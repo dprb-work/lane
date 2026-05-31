@@ -11,7 +11,6 @@ from lane.init import (
     AGENT_INSTRUCTIONS,
     AGENT_INSTRUCTIONS_HEADER,
     CODEX_SKILL_MARKER,
-    OPENCODE_TOOL_PLACEHOLDER,
     SHARED_VENV_SETUP_COMMAND,
     InitError,
     check_paseo_cli,
@@ -26,6 +25,7 @@ from lane.init import (
     install_lane_lite_schema,
     opencode_tool_path,
     run_init,
+    run_install,
 )
 
 
@@ -69,11 +69,23 @@ def test_run_init_reports_required_tools(
     result = run_init(tmp_path, home=tmp_path)
 
     assert result.missing_tools == ("openspec", "gh", "glab")
+    assert result.paseo_config == tmp_path / "paseo.json"
+    assert not (tmp_path / ".local/share/openspec/schemas/lane-lite").exists()
+
+
+def test_run_install_reports_user_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("lane.init.shutil.which", lambda tool: None)
+
+    result = run_install(home=tmp_path)
+
+    assert result.schema_dir == tmp_path / ".local/share/openspec/schemas/lane-lite"
     assert result.opencode_tool == tmp_path / ".config/opencode/tools/lane.ts"
     assert result.opencode_tool_action == "skipped"
     assert result.codex_skill == tmp_path / ".agents/skills/lane/SKILL.md"
     assert result.codex_skill_action == "skipped"
-    assert result.paseo_config == tmp_path / "paseo.json"
 
 
 def test_agent_instructions_list_supported_branch_types() -> None:
@@ -155,15 +167,18 @@ def test_ensure_opencode_tool_registration_creates_global_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "source.ts"
-    source.write_text(f"root={OPENCODE_TOOL_PLACEHOLDER}\n", encoding="utf-8")
+    source.write_text("root=__LANE_REPO_ROOT__\n", encoding="utf-8")
     monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/opencode")
-    monkeypatch.setattr("lane.init.opencode_tool_source_path", lambda: source)
+    monkeypatch.setattr(
+        "lane.init._asset_text",
+        lambda path: source.read_text(encoding="utf-8"),
+    )
 
     action = ensure_opencode_tool_registration(home=tmp_path)
 
     path = opencode_tool_path(home=tmp_path)
     assert action == "created"
-    assert OPENCODE_TOOL_PLACEHOLDER not in path.read_text(encoding="utf-8")
+    assert "__LANE_REPO_ROOT__" not in path.read_text(encoding="utf-8")
 
 
 def test_ensure_opencode_tool_registration_skips_when_opencode_is_missing(
@@ -244,7 +259,7 @@ def test_compact_codex_skill_note(
     monkeypatch.setattr("lane.init.shutil.which", lambda tool: "/bin/codex")
     monkeypatch.setattr("lane.init.codex_skill_path", lambda: tmp_path / "SKILL.md")
 
-    assert compact_codex_skill_note(tmp_path).startswith("install codex skill:")
+    assert compact_codex_skill_note(tmp_path) == "install codex skill: lane install"
 
     (tmp_path / "SKILL.md").write_text(CODEX_SKILL_MARKER, encoding="utf-8")
 

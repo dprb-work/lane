@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass
+from importlib.resources import as_file, files
 from pathlib import Path
 
 from lane.branches import supported_branch_types_label
@@ -77,28 +78,57 @@ class InitResult:
     gitignore: Path
     agents: Path
     agents_action: str
-    opencode_tool: Path
-    opencode_tool_action: str
-    codex_skill: Path
-    codex_skill_action: str
     paseo_config: Path
     paseo_config_action: str
-    schema_dir: Path
     missing_tools: tuple[str, ...]
     paseo_version: str | None
     paseo_current_version: str | None
     paseo_upgrade_hint: str | None
 
 
+@dataclass(frozen=True)
+class InstallResult:
+    opencode_tool: Path
+    opencode_tool_action: str
+    codex_skill: Path
+    codex_skill_action: str
+    schema_dir: Path
+
+
+def run_install(*, home: Path | None = None) -> InstallResult:
+    home_root = Path.home() if home is None else home
+    return run_install_for_paths(
+        home=home_root,
+        opencode_tool=opencode_tool_path(home=home_root),
+        codex_skill=codex_skill_path(home=home_root),
+        schema_dir=lane_lite_schema_path(home=home_root),
+    )
+
+
+def run_install_for_paths(
+    *,
+    home: Path,
+    opencode_tool: Path,
+    codex_skill: Path,
+    schema_dir: Path,
+) -> InstallResult:
+    return InstallResult(
+        opencode_tool=opencode_tool,
+        opencode_tool_action=ensure_opencode_tool_registration(
+            home=home,
+            path=opencode_tool,
+        ),
+        codex_skill=codex_skill,
+        codex_skill_action=ensure_codex_skill(path=codex_skill),
+        schema_dir=install_lane_lite_schema(schema_dir=schema_dir),
+    )
+
+
 def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     target = target.resolve()
-    home_root = Path.home() if home is None else home
     ensure_lane_ignored(target)
     agents_action = ensure_agent_instructions(target)
-    opencode_tool_action = ensure_opencode_tool_registration(home=home_root)
-    codex_skill_action = ensure_codex_skill(home=home_root)
     paseo_config_action = ensure_paseo_shared_venv_setup(target)
-    schema_dir = install_lane_lite_schema(home_root)
     paseo_check = check_paseo_cli(target)
     missing_tools = tuple(
         tool
@@ -110,13 +140,8 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
         gitignore=target / ".gitignore",
         agents=target / "AGENTS.md",
         agents_action=agents_action,
-        opencode_tool=opencode_tool_path(home=home_root),
-        opencode_tool_action=opencode_tool_action,
-        codex_skill=codex_skill_path(home=home_root),
-        codex_skill_action=codex_skill_action,
         paseo_config=target / PASEO_CONFIG_FILE,
         paseo_config_action=paseo_config_action,
-        schema_dir=schema_dir,
         missing_tools=missing_tools,
         paseo_version=paseo_check.version,
         paseo_current_version=paseo_check.current_version,
@@ -130,8 +155,10 @@ def opencode_tool_path(*, home: Path | None = None) -> Path:
     return home / ".config" / "opencode" / "tools" / "lane.ts"
 
 
-def opencode_tool_source_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "opencode" / "tools" / "lane.ts"
+def lane_lite_schema_path(*, home: Path | None = None) -> Path:
+    if home is None:
+        home = Path.home()
+    return home / ".local" / "share" / "openspec" / "schemas" / LANE_LITE_SCHEMA
 
 
 def compact_opencode_registration_note() -> str:
@@ -140,12 +167,7 @@ def compact_opencode_registration_note() -> str:
     path = opencode_tool_path()
     if path.is_file():
         return f"opencode tool present: {path}"
-    script = (
-        Path(__file__).resolve().parents[2]
-        / "scripts"
-        / "register_opencode_tool.py"
-    )
-    return f"register opencode tool: python3 {script}"
+    return "install opencode tool: lane install"
 
 
 def codex_skill_path(*, home: Path | None = None) -> Path:
@@ -160,7 +182,7 @@ def compact_codex_skill_note(target: Path) -> str:
     path = codex_skill_path()
     if path.is_file():
         return f"codex skill present: {path}"
-    return f"install codex skill: lane init {target.resolve()}"
+    return "install codex skill: lane install"
 
 
 def compact_tool_requirement_note() -> str:
@@ -260,15 +282,16 @@ def ensure_agent_instructions(target: Path) -> str:
     return "created"
 
 
-def ensure_opencode_tool_registration(*, home: Path | None = None) -> str:
+def ensure_opencode_tool_registration(
+    *,
+    home: Path | None = None,
+    path: Path | None = None,
+) -> str:
     if shutil.which("opencode") is None:
         return "skipped"
-    source = opencode_tool_source_path()
-    if not source.is_file():
-        return "missing-source"
 
-    path = opencode_tool_path(home=home)
-    content = source.read_text(encoding="utf-8").replace(
+    path = opencode_tool_path(home=home) if path is None else path
+    content = _asset_text("assets/opencode/tools/lane.ts").replace(
         OPENCODE_TOOL_PLACEHOLDER,
         str(Path(__file__).resolve().parents[2]),
     )
@@ -286,17 +309,22 @@ def ensure_opencode_tool_registration(*, home: Path | None = None) -> str:
     return action
 
 
-def ensure_codex_skill(*, home: Path | None = None) -> str:
+def ensure_codex_skill(
+    *,
+    home: Path | None = None,
+    path: Path | None = None,
+) -> str:
     if shutil.which("codex") is None:
         return "skipped"
-    path = codex_skill_path(home=home)
+    path = codex_skill_path(home=home) if path is None else path
     if path.exists():
         existing = path.read_text(encoding="utf-8")
         if CODEX_SKILL_MARKER not in existing:
             return "skipped"
-        if existing == _codex_skill():
+        skill = _codex_skill()
+        if existing == skill:
             return "unchanged"
-        path.write_text(_codex_skill(), encoding="utf-8")
+        path.write_text(skill, encoding="utf-8")
         return "replaced"
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -373,19 +401,16 @@ def _normalize_setup_commands(raw: object) -> list[str]:
     raise InitError("invalid paseo.json: worktree.setup must be a string or array")
 
 
-def install_lane_lite_schema(home: Path) -> Path:
-    schema_dir = home / ".local" / "share" / "openspec" / "schemas" / LANE_LITE_SCHEMA
-    template_dir = schema_dir / "templates"
-    template_dir.mkdir(parents=True, exist_ok=True)
-
-    schema_file = schema_dir / "schema.yaml"
-    if not schema_file.exists():
-        schema_file.write_text(_schema_yaml(), encoding="utf-8")
-
-    template_file = template_dir / "lane.md"
-    if not template_file.exists():
-        template_file.write_text(_lane_template(), encoding="utf-8")
-
+def install_lane_lite_schema(
+    home: Path | None = None,
+    *,
+    schema_dir: Path | None = None,
+) -> Path:
+    if schema_dir is None:
+        schema_dir = lane_lite_schema_path(home=home)
+    source = files("lane").joinpath(f"assets/openspec/schemas/{LANE_LITE_SCHEMA}")
+    with as_file(source) as source_path:
+        shutil.copytree(source_path, schema_dir, dirs_exist_ok=True)
     return schema_dir
 
 
@@ -426,94 +451,9 @@ def _version_tuple(version: str) -> tuple[int, int, int]:
     return tuple(numbers)
 
 
-def _schema_yaml() -> str:
-    return """name: lane-lite
-version: 1
-description: Minimal lane spec for small fixes, docs, chores, and tests
-artifacts:
-  - id: lane
-    generates: lane.md
-    description: Compact intent, acceptance, and task record
-    template: lane.md
-    instruction: |
-      Create a compact lane record that explains why the change exists, what is
-      in scope, how acceptance will be judged, and the implementation tasks.
-    requires: []
-
-apply:
-  requires: [lane]
-  tracks: lane.md
-"""
-
-
-def _lane_template() -> str:
-    return """# Lane: <change-id>
-
-## Intent
-
-## Scope
-
-## Acceptance
-
-## Tasks
-
-- [ ]
-"""
-
-
 def _codex_skill() -> str:
-    description = (
-        "Use when working in repositories that use the lane Paseo-native "
-        "lifecycle CLI, including starting lanes, checking status, running "
-        "verification, review handoff, finalize, cleanup, or deciding whether "
-        "raw git worktree commands are appropriate."
-    )
-    return f"""---
-name: lane
-description: {description}
----
+    return _asset_text("assets/codex/skills/lane/SKILL.md")
 
-{CODEX_SKILL_MARKER}
 
-# Lane Workflow
-
-Use this skill when a repository uses `lane` for Paseo-native development lanes.
-
-## Rules
-
-- Prefer `lane` commands over raw `git worktree`, raw `git push`, or ad hoc
-  checkout commands.
-- Start coherent work with `lane start <type>/<slug>` unless the user explicitly
-  says not to or `lane`/Paseo is unavailable.
-- Work inside the created Paseo workspace, not the source checkout.
-- Use `lane status` and `lane doctor` before diagnosing lane lifecycle issues.
-- Use `lane run -- <command>` for lane-scoped commands.
-- Use `lane verify` for repository verification when available.
-- Use `lane review`, then `lane finalize`, before human PR or MR handoff when
-  the lane is ready.
-- Use `lane cleanup` for merged lanes and `lane abort` for cancelled lanes.
-- If `lane` or Paseo is unavailable and raw Git is necessary, state the
-  exception before using raw Git.
-
-## Common Commands
-
-```bash
-lane init
-lane start feat/example --base main
-lane status
-lane doctor
-lane run -- python -m pytest
-lane verify
-lane push
-lane review
-lane finalize
-lane cleanup
-```
-
-## Notes
-
-`lane` owns ignored `.lane/` state, required OpenSpec specs, verification,
-review orchestration, finalize, cleanup, and abort policy. Paseo owns workspace
-and worktree creation, setup, services, provider runtimes, agents, terminals,
-and archive behavior.
-"""
+def _asset_text(path: str) -> str:
+    return files("lane").joinpath(path).read_text(encoding="utf-8")

@@ -33,10 +33,13 @@ from lane.forge import (
 )
 from lane.init import (
     InitError,
-    compact_codex_skill_note,
-    compact_opencode_registration_note,
+    codex_skill_path,
     compact_tool_requirement_note,
+    lane_lite_schema_path,
+    opencode_tool_path,
     run_init,
+    run_install,
+    run_install_for_paths,
 )
 from lane.lane_target import LaneTarget, LaneTargetError, resolve_lane_target
 from lane.openspec import (
@@ -148,6 +151,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Repository path to initialize (default: current directory).",
     )
     init.set_defaults(handler=handle_init)
+
+    install = subparsers.add_parser(
+        "install",
+        help="Install user-level lane assets.",
+        description=(
+            "Install user-level lane assets such as OpenSpec schemas and "
+            "agent runtime integrations."
+        ),
+    )
+    install.add_argument(
+        "--home",
+        type=Path,
+        help="Home directory for default user-level install paths.",
+    )
+    install.add_argument(
+        "--opencode-tool",
+        type=Path,
+        help="Explicit OpenCode lane.ts target path.",
+    )
+    install.add_argument(
+        "--codex-skill",
+        type=Path,
+        help="Explicit Codex SKILL.md target path.",
+    )
+    install.add_argument(
+        "--schema-dir",
+        type=Path,
+        help="Explicit lane-lite schema target directory.",
+    )
+    install.set_defaults(handler=handle_install)
 
     doctor = subparsers.add_parser("doctor", help="Run read-only diagnostics.")
     doctor.add_argument(
@@ -517,12 +550,11 @@ def handle_init(args: argparse.Namespace) -> int:
     result = run_init(Path(args.path))
     print(f"ignored state: {result.gitignore}")
     print(f"agent instructions {result.agents_action}: {result.agents}")
-    print(f"opencode tool {result.opencode_tool_action}: {result.opencode_tool}")
-    print(f"codex skill {result.codex_skill_action}: {result.codex_skill}")
     print(f"paseo config {result.paseo_config_action}: {result.paseo_config}")
-    print(f"lane-lite schema: {result.schema_dir}")
-    print(compact_codex_skill_note(Path(args.path)))
-    print(compact_opencode_registration_note())
+    print(
+        "user assets: run `lane install` to refresh OpenSpec schemas "
+        "and agent integrations"
+    )
     print(compact_tool_requirement_note())
     if result.paseo_version is not None:
         print(f"paseo CLI: {result.paseo_version}")
@@ -533,6 +565,23 @@ def handle_init(args: argparse.Namespace) -> int:
     if result.missing_tools:
         tools = ", ".join(result.missing_tools)
         print(f"warning: missing required tools on PATH: {tools}", file=sys.stderr)
+    return 0
+
+
+def handle_install(args: argparse.Namespace) -> int:
+    if args.opencode_tool or args.codex_skill or args.schema_dir:
+        home = Path.home() if args.home is None else args.home
+        result = run_install_for_paths(
+            home=home,
+            opencode_tool=args.opencode_tool or opencode_tool_path(home=home),
+            codex_skill=args.codex_skill or codex_skill_path(home=home),
+            schema_dir=args.schema_dir or lane_lite_schema_path(home=home),
+        )
+    else:
+        result = run_install(home=args.home)
+    print(f"lane-lite schema: {result.schema_dir}")
+    print(f"opencode tool {result.opencode_tool_action}: {result.opencode_tool}")
+    print(f"codex skill {result.codex_skill_action}: {result.codex_skill}")
     return 0
 
 

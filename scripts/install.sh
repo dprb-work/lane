@@ -150,6 +150,7 @@ install_python_package() {
 
   mkdir -p "$BIN_DIR"
   link_executable "$(pwd)/$VENV_DIR/bin/lane" "$BIN_DIR/lane"
+  "$(pwd)/$VENV_DIR/bin/lane" install
 }
 
 link_executable() {
@@ -180,5 +181,5 @@ install_node_clis
 install_python_package
 report_versions
 
-printf '\nlane dependencies installed. Run `lane init` inside a target repo to bootstrap lane state.\n'
+printf '\nlane dependencies and user assets installed. Run `lane init` inside a target repo to bootstrap lane state.\n'
 printf 'Ensure %s is on PATH for paseo, openspec, and lane.\n' "$BIN_DIR"
