@@ -27,6 +27,8 @@ fallback workflows unless explicitly requested.
 - This is a repo-development helper, not a product fallback workflow. Normal
   target repositories should use their installed `lane` command and `lane run`
   for workspace-scoped execution.
+- Do not use raw `git worktree` for new work in this repository. Active work
+  should be started or attached with `lane` and tracked through `.lane/state.yaml`.
 
 ## GitHub Setup
 
