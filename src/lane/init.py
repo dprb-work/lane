@@ -8,6 +8,7 @@ from importlib.resources import as_file, files
 from pathlib import Path
 
 from lane.branches import supported_branch_types_label
+from lane.verify import VerifyError, discover_verify_command
 
 LANE_IGNORE_ENTRY = ".lane/"
 LANE_LITE_SCHEMA = "lane-lite"
@@ -32,7 +33,26 @@ else
   printf 'lane shared venv missing: %s\n' "$PASEO_SOURCE_CHECKOUT_PATH/.venv" >&2
 fi"""
 
-AGENT_INSTRUCTIONS = f"""{AGENT_INSTRUCTIONS_HEADER}
+VERIFICATION_SETUP_NOTE = """Verification setup:
+
+- Repository verification is not configured yet; `lane init` does not create a
+  no-op verifier.
+- A developer agent should add one real repo-owned verification entrypoint:
+  `scripts/verify.py` when Python is already a repo/runtime dependency,
+  `just verify` when the repo uses Just, or `npm run verify` when the repo is
+  Node/npm-based.
+- The verifier should run the meaningful checks for the repo and fail when those
+  checks fail or required verification tools are missing. A logging-only or empty
+  verifier is not acceptable because it makes unverified work appear verified.
+- After adding the verifier, run `lane init` again or remove this setup note from
+  the Lane-managed AGENTS.md block.
+
+"""
+
+
+def agent_instructions(*, verification_configured: bool) -> str:
+    verification_setup = "" if verification_configured else VERIFICATION_SETUP_NOTE
+    return f"""{AGENT_INSTRUCTIONS_HEADER}
 ## Mandatory Lane Workflow
 
 This repository uses `lane` as the required Paseo-native lifecycle workflow.
@@ -62,11 +82,16 @@ Required commands:
 - Prepare PR handoff with `lane finalize`.
 - Retire merged or canceled lanes with `lane cleanup` or `lane abort`.
 
+{verification_setup}
+
 OpenCode, Codex, Claude Code, and other runtimes are provider implementations
 behind Paseo. Keep provider-specific assumptions out of repo-local workflow
 policy unless the user explicitly asks for them.
 {AGENT_INSTRUCTIONS_FOOTER}
 """
+
+
+AGENT_INSTRUCTIONS = agent_instructions(verification_configured=False)
 
 
 class InitError(RuntimeError):
@@ -84,6 +109,7 @@ class InitResult:
     paseo_version: str | None
     paseo_current_version: str | None
     paseo_upgrade_hint: str | None
+    verification_command: str | None
 
 
 @dataclass(frozen=True)
@@ -140,8 +166,12 @@ def install_lane_schemas(schemas_dir: Path) -> Path:
 
 def run_init(target: Path, *, home: Path | None = None) -> InitResult:
     target = target.resolve()
+    verification_command = configured_verify_command(target)
     ensure_lane_ignored(target)
-    agents_action = ensure_agent_instructions(target)
+    agents_action = ensure_agent_instructions(
+        target,
+        verification_configured=verification_command is not None,
+    )
     paseo_config_action = ensure_paseo_shared_venv_setup(target)
     paseo_check = check_paseo_cli(target)
     missing_tools = tuple(
@@ -160,6 +190,7 @@ def run_init(target: Path, *, home: Path | None = None) -> InitResult:
         paseo_version=paseo_check.version,
         paseo_current_version=paseo_check.current_version,
         paseo_upgrade_hint=paseo_check.upgrade_hint,
+        verification_command=verification_command,
     )
 
 
@@ -273,15 +304,27 @@ def ensure_lane_ignored(target: Path) -> None:
     )
 
 
-def ensure_agent_instructions(target: Path) -> str:
+def configured_verify_command(target: Path) -> str | None:
+    try:
+        return discover_verify_command(target).label
+    except VerifyError:
+        return None
+
+
+def ensure_agent_instructions(
+    target: Path,
+    *,
+    verification_configured: bool = False,
+) -> str:
     path = target / "AGENTS.md"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    instructions = agent_instructions(verification_configured=verification_configured)
 
     start = existing.find(AGENT_INSTRUCTIONS_HEADER)
     end = existing.find(AGENT_INSTRUCTIONS_FOOTER)
     if start != -1 and end != -1 and end > start:
         end += len(AGENT_INSTRUCTIONS_FOOTER)
-        updated = existing[:start].rstrip() + "\n\n" + AGENT_INSTRUCTIONS
+        updated = existing[:start].rstrip() + "\n\n" + instructions
         suffix = existing[end:].strip()
         if suffix:
             updated += "\n\n" + suffix
@@ -290,13 +333,13 @@ def ensure_agent_instructions(target: Path) -> str:
 
     if existing.strip():
         path.write_text(
-            existing.rstrip() + "\n\n" + AGENT_INSTRUCTIONS + "\n",
+            existing.rstrip() + "\n\n" + instructions + "\n",
             encoding="utf-8",
         )
         return "updated"
 
     path.write_text(
-        "# Lane Agent Instructions\n\n" + AGENT_INSTRUCTIONS + "\n",
+        "# Lane Agent Instructions\n\n" + instructions + "\n",
         encoding="utf-8",
     )
     return "created"

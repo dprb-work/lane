@@ -12,11 +12,14 @@ from lane.init import (
     AGENT_INSTRUCTIONS_HEADER,
     CODEX_SKILL_MARKER,
     SHARED_VENV_SETUP_COMMAND,
+    VERIFICATION_SETUP_NOTE,
     InitError,
+    agent_instructions,
     check_paseo_cli,
     codex_skill_path,
     compact_codex_skill_note,
     compact_tool_requirement_note,
+    configured_verify_command,
     ensure_agent_instructions,
     ensure_codex_skill,
     ensure_lane_ignored,
@@ -79,6 +82,7 @@ def test_run_init_reports_required_tools(
 
     assert result.missing_tools == ("openspec", "gh", "glab")
     assert result.paseo_config == tmp_path / "paseo.json"
+    assert result.verification_command is None
     assert not (tmp_path / ".local/share/openspec/schemas/lane-lite").exists()
 
 
@@ -99,6 +103,31 @@ def test_run_install_reports_user_assets(
 
 def test_agent_instructions_list_supported_branch_types() -> None:
     assert f"Supported types: {supported_branch_types_label()}." in AGENT_INSTRUCTIONS
+
+
+def test_agent_instructions_define_repo_owned_verification() -> None:
+    assert "Repository verification is not configured yet" in AGENT_INSTRUCTIONS
+    assert "Python is already a repo/runtime dependency" in AGENT_INSTRUCTIONS
+    assert "`just verify` when the repo uses Just" in AGENT_INSTRUCTIONS
+    assert "`npm run verify` when the repo is" in AGENT_INSTRUCTIONS
+    assert "logging-only or empty" in AGENT_INSTRUCTIONS
+    assert "appear verified" in AGENT_INSTRUCTIONS
+    assert "After adding the verifier" in AGENT_INSTRUCTIONS
+
+
+def test_agent_instructions_omit_setup_note_when_verify_is_configured() -> None:
+    text = agent_instructions(verification_configured=True)
+
+    assert VERIFICATION_SETUP_NOTE not in text
+    assert "Verify with `lane verify`" in text
+
+
+def test_configured_verify_command_reports_discovered_verifier(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "verify.py").write_text("", encoding="utf-8")
+
+    assert configured_verify_command(tmp_path) == "python3 scripts/verify.py"
 
 
 def test_ensure_paseo_shared_venv_setup_creates_config(tmp_path: Path) -> None:
@@ -283,6 +312,20 @@ def test_ensure_agent_instructions_creates_agents(tmp_path: Path) -> None:
     assert text.startswith("# Lane Agent Instructions")
     assert "Mandatory Lane Workflow" in text
     assert "Paseo owns workspace and worktree creation" in text
+    assert "Repository verification is not configured yet" in text
+
+
+def test_ensure_agent_instructions_removes_setup_note_when_verify_is_configured(
+    tmp_path: Path,
+) -> None:
+    ensure_agent_instructions(tmp_path)
+
+    action = ensure_agent_instructions(tmp_path, verification_configured=True)
+
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert action == "replaced"
+    assert "Repository verification is not configured yet" not in text
+    assert "Mandatory Lane Workflow" in text
 
 
 def test_ensure_agent_instructions_appends_to_existing_agents(tmp_path: Path) -> None:

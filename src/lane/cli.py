@@ -586,6 +586,13 @@ def handle_init(args: argparse.Namespace) -> int:
     print(f"ignored state: {result.gitignore}")
     print(f"agent instructions {result.agents_action}: {result.agents}")
     print(f"paseo config {result.paseo_config_action}: {result.paseo_config}")
+    if result.verification_command is None:
+        print(
+            "verification: not configured; add a real repo-owned verifier: "
+            "scripts/verify.py, just verify, or npm run verify"
+        )
+    else:
+        print(f"verification: {result.verification_command}")
     print(
         "user assets: run `lane install` to refresh OpenSpec schemas "
         "and agent integrations"
