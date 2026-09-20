@@ -1,5 +1,12 @@
 # lane
 
+> [!CAUTION]
+> **DEPRECATED. This CLI is no longer maintained.**
+> [Soul's agent-workflow](https://github.com/dprb-work/soul/tree/main/skills/agent-workflow)
+> replaces the lifecycle policy previously owned by this Paseo-based tool.
+> Do not install Lane for new work. Use [Soul](https://github.com/dprb-work/soul)
+> for the current workflow. Code and documentation below are retained as history.
+
 `lane` is a Paseo-native lane lifecycle CLI for agent-driven development.
 
 It is not a generic worktree manager. Paseo owns workspaces, worktrees, agents,
